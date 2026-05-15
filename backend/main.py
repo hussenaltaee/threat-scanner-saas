@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, Request, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.security import HTTPBearer
@@ -35,6 +35,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 )
+
 logger = logging.getLogger("threat-scanner")
 limiter = Limiter(key_func=get_remote_address)
 
@@ -45,13 +46,12 @@ app = FastAPI(
     redoc_url="/redoc",
     openapi_url="/openapi.json"
 )
+
 security = HTTPBearer()
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
-
-scan_jobs = {}
 
 # Force HTTPS in production
 app.add_middleware(HTTPSRedirectMiddleware)
@@ -65,6 +65,10 @@ app.add_middleware(
 )
 
 init_db()
+
+scan_jobs = {}
+scan_queue = None
+queue_worker_task = None
 
 
 def create_token(data):
@@ -126,7 +130,6 @@ class ScanRequest(BaseModel):
     profile: str = "full"
 
 
-
 def send_discord_alert(target, risk, score):
     if not DISCORD_WEBHOOK_URL:
         return
@@ -167,10 +170,71 @@ def save_scan_result(target, result, username):
     conn.close()
 
 
+def get_queue_position(job_id):
+    if not scan_queue:
+        return None
+
+    try:
+        queued_items = list(scan_queue._queue)
+
+        for index, item in enumerate(queued_items, start=1):
+            if item.get("job_id") == job_id:
+                return index
+
+        return None
+
+    except Exception:
+        return None
+
+
+async def scan_worker():
+    logger.info("Scan queue worker started")
+
+    while True:
+        job = await scan_queue.get()
+
+        job_id = job["job_id"]
+        target = job["target"]
+        profile = job["profile"]
+        username = job["username"]
+
+        try:
+            await run_scan_job(job_id, target, profile, username)
+
+        except Exception as e:
+            logger.exception(f"Queue worker failed | job_id={job_id}")
+
+            if job_id in scan_jobs:
+                scan_jobs[job_id]["status"] = "failed"
+                scan_jobs[job_id]["error"] = str(e)
+                scan_jobs[job_id]["step"] = "Queue worker failed"
+
+        finally:
+            scan_queue.task_done()
+
+
+@app.on_event("startup")
+async def startup_event():
+    global scan_queue
+    global queue_worker_task
+
+    scan_queue = asyncio.Queue()
+
+    if queue_worker_task is None:
+        queue_worker_task = asyncio.create_task(scan_worker())
+
+    logger.info("Application startup complete")
+
+
 @app.get("/")
 @limiter.limit("60/minute")
 def home(request: Request):
-    return {"status": "online"}
+    queue_size = scan_queue.qsize() if scan_queue else 0
+
+    return {
+        "status": "online",
+        "queue_size": queue_size
+    }
 
 
 @app.post("/register")
@@ -197,7 +261,6 @@ def login(request: Request, data: LoginRequest):
     return {"access_token": token}
 
 
-# القديم: يبقى شغال ويرجع النتيجة مباشرة
 @app.post("/scan")
 @limiter.limit("5/minute")
 async def scan(
@@ -222,16 +285,17 @@ async def scan(
     return result
 
 
-# الجديد: يبدأ فحص بخطوات Progress
 @app.post("/scan-async")
 @limiter.limit("5/minute")
 async def scan_async(
     request: Request,
     data: ScanRequest,
-    background_tasks: BackgroundTasks,
     auth=Depends(security),
     user=Depends(get_current_user)
 ):
+    if scan_queue is None:
+        raise HTTPException(status_code=503, detail="Scan queue is not ready")
+
     job_id = str(uuid.uuid4())
 
     scan_jobs[job_id] = {
@@ -243,27 +307,36 @@ async def scan_async(
         "profile": data.profile,
         "result": None,
         "error": None,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": datetime.utcnow().isoformat(),
+        "started_at": None,
+        "completed_at": None,
+        "queue_position": None
     }
 
-    background_tasks.add_task(
-        run_scan_job,
-        job_id,
-        data.target,
-        data.profile,
-        user["username"]
-    )
+    await scan_queue.put({
+        "job_id": job_id,
+        "target": data.target,
+        "profile": data.profile,
+        "username": user["username"]
+    })
+
+    position = get_queue_position(job_id)
+    scan_jobs[job_id]["queue_position"] = position
 
     return {
         "job_id": job_id,
         "status": "queued",
-        "message": "Scan started"
+        "queue_position": position,
+        "queue_size": scan_queue.qsize(),
+        "message": "Scan added to queue"
     }
 
 
 async def run_scan_job(job_id, target, profile, username):
     try:
         scan_jobs[job_id]["status"] = "running"
+        scan_jobs[job_id]["started_at"] = datetime.utcnow().isoformat()
+        scan_jobs[job_id]["queue_position"] = None
         scan_jobs[job_id]["progress"] = 10
         scan_jobs[job_id]["step"] = "Preparing target"
 
@@ -312,12 +385,15 @@ async def run_scan_job(job_id, target, profile, username):
         scan_jobs[job_id]["progress"] = 100
         scan_jobs[job_id]["step"] = "Scan completed"
         scan_jobs[job_id]["result"] = result
+        scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
 
     except Exception as e:
         logger.exception(f"Scan job failed | job_id={job_id} | target={target}")
+
         scan_jobs[job_id]["status"] = "failed"
         scan_jobs[job_id]["error"] = str(e)
         scan_jobs[job_id]["step"] = "Scan failed"
+        scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
 
 
 @app.get("/scan-status/{job_id}")
@@ -333,7 +409,51 @@ def scan_status(
     if not job:
         raise HTTPException(status_code=404, detail="Scan job not found")
 
+    if job["status"] == "queued":
+        job["queue_position"] = get_queue_position(job_id)
+
+    queue_size = scan_queue.qsize() if scan_queue else 0
+    job["queue_size"] = queue_size
+
     return job
+
+
+@app.get("/queue-status")
+@limiter.limit("60/minute")
+def queue_status(
+    request: Request,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    queue_size = scan_queue.qsize() if scan_queue else 0
+
+    running_jobs = [
+        job for job in scan_jobs.values()
+        if job.get("status") == "running"
+    ]
+
+    queued_jobs = [
+        job for job in scan_jobs.values()
+        if job.get("status") == "queued"
+    ]
+
+    completed_jobs = [
+        job for job in scan_jobs.values()
+        if job.get("status") == "completed"
+    ]
+
+    failed_jobs = [
+        job for job in scan_jobs.values()
+        if job.get("status") == "failed"
+    ]
+
+    return {
+        "queue_size": queue_size,
+        "running": len(running_jobs),
+        "queued": len(queued_jobs),
+        "completed": len(completed_jobs),
+        "failed": len(failed_jobs)
+    }
 
 
 @app.get("/history")
