@@ -1,0 +1,583 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Threat SaaS</title>
+
+<style>
+body{
+    font-family:Arial;
+    background:#0f172a;
+    color:white;
+    padding:25px
+}
+
+input,button,select{
+    padding:10px;
+    margin:5px;
+    border-radius:6px;
+    border:none
+}
+
+button{
+    background:#38bdf8;
+    cursor:pointer;
+    font-weight:bold
+}
+
+.card{
+    background:#1e293b;
+    padding:18px;
+    margin-top:15px;
+    border-radius:12px;
+    border-left:6px solid #38bdf8
+}
+
+.progress-wrap{
+    background:#334155;
+    border-radius:12px;
+    overflow:hidden;
+    height:22px;
+    margin:15px 0
+}
+
+.progress-bar{
+    background:#38bdf8;
+    height:100%;
+    width:0%;
+    text-align:center;
+    color:#0f172a;
+    font-weight:bold;
+    transition:width .4s ease
+}
+
+.summary-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:12px;
+    margin:15px 0
+}
+
+.summary-box{
+    background:#334155;
+    padding:15px;
+    border-radius:10px;
+    text-align:center
+}
+
+.summary-box h3{
+    margin:0;
+    font-size:14px;
+    color:#cbd5e1
+}
+
+.summary-box p{
+    font-size:24px;
+    font-weight:bold;
+    margin:8px 0 0
+}
+
+.LOW{border-left-color:#22c55e}
+.MEDIUM{border-left-color:#f59e0b}
+.HIGH{border-left-color:#ef4444}
+.CRITICAL{border-left-color:#dc2626}
+.UNKNOWN{border-left-color:#94a3b8}
+.INFO{border-left-color:#38bdf8}
+
+.finding{
+    background:#334155;
+    padding:12px;
+    margin:10px 0;
+    border-radius:8px
+}
+
+.cve,.nikto{
+    background:#111827;
+    padding:14px;
+    margin:10px 0;
+    border-radius:8px;
+    border-left:4px solid #38bdf8
+}
+
+a{
+    color:#38bdf8;
+    text-decoration:none
+}
+
+hr{
+    border:1px solid #334155
+}
+</style>
+</head>
+
+<body>
+
+<h1>🛡️ Threat Scanner</h1>
+
+<h2>Register</h2>
+<input id="r_user" placeholder="username">
+<input id="r_pass" type="password" placeholder="password">
+<button onclick="register()">Register</button>
+
+<hr>
+
+<h2>Login</h2>
+<input id="user" placeholder="username">
+<input id="pass" type="password" placeholder="password">
+<button onclick="login()">Login</button>
+
+<hr>
+
+<h2>Scan Target</h2>
+
+<input id="t" placeholder="example.com">
+
+<select id="scan_profile">
+    <option value="quick">⚡ Quick Scan</option>
+    <option value="full" selected>🛡️ Full Scan</option>
+    <option value="deep">🔥 Deep Scan</option>
+</select>
+
+<button onclick="scan()">Scan</button>
+<button onclick="downloadReport()">Download JSON Report</button>
+<button onclick="downloadPDF()">Download PDF Report</button>
+<button onclick="logout()">Logout</button>
+
+<div id="out"></div>
+
+<script>
+let API = "https://threat-scanner-saas.onrender.com";
+let lastReport = null;
+let progressTimer = null;
+
+async function register(){
+    const username = document.getElementById("r_user").value;
+    const password = document.getElementById("r_pass").value;
+
+    const res = await fetch(API + "/register", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({username,password})
+    });
+
+    const data = await res.json();
+    alert(res.ok ? "✅ Account created" : "❌ " + data.detail);
+}
+
+async function login(){
+    const username = document.getElementById("user").value;
+    const password = document.getElementById("pass").value;
+
+    const res = await fetch(API + "/login", {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({username,password})
+    });
+
+    const data = await res.json();
+
+    if(data.access_token){
+        localStorage.setItem("token", data.access_token);
+        alert("✅ Logged in");
+    }else{
+        alert("❌ Login failed");
+    }
+}
+
+async function scan(){
+    const target = document.getElementById("t").value;
+    const profile = document.getElementById("scan_profile").value;
+    const token = localStorage.getItem("token");
+
+    if(!token){
+        alert("❌ لازم تسجل دخول");
+        return;
+    }
+
+    if(progressTimer){
+        clearInterval(progressTimer);
+        progressTimer = null;
+    }
+
+    lastReport = null;
+
+    document.getElementById("out").innerHTML = `
+        <div class="card">
+            <h3>⏳ Scan Starting...</h3>
+            <p><b>Target:</b> ${target}</p>
+            <p><b>Profile:</b> ${profile}</p>
+
+            <div class="progress-wrap">
+                <div id="progressBar" class="progress-bar">0%</div>
+            </div>
+
+            <p id="progressStep">Preparing...</p>
+        </div>
+    `;
+
+    const res = await fetch(API + "/scan-async", {
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json",
+            "Authorization":"Bearer " + token
+        },
+        body:JSON.stringify({
+            target: target,
+            profile: profile
+        })
+    });
+
+    const data = await res.json();
+
+    if(!res.ok){
+        document.getElementById("out").innerHTML = `
+            <div class="card HIGH">
+                <h3>❌ Error</h3>
+                <p>${data.detail || "Scan failed"}</p>
+            </div>
+        `;
+        return;
+    }
+
+    pollScanStatus(data.job_id);
+}
+
+function pollScanStatus(jobId){
+    const token = localStorage.getItem("token");
+
+    progressTimer = setInterval(async () => {
+        const res = await fetch(API + "/scan-status/" + jobId, {
+            method:"GET",
+            headers:{
+                "Authorization":"Bearer " + token
+            }
+        });
+
+        const job = await res.json();
+
+        if(!res.ok){
+            clearInterval(progressTimer);
+            progressTimer = null;
+
+            document.getElementById("out").innerHTML = `
+                <div class="card HIGH">
+                    <h3>❌ Error</h3>
+                    <p>${job.detail || "Could not fetch scan status"}</p>
+                </div>
+            `;
+            return;
+        }
+
+        const progressBar = document.getElementById("progressBar");
+        const progressStep = document.getElementById("progressStep");
+
+        if(progressBar){
+            progressBar.style.width = job.progress + "%";
+            progressBar.innerText = job.progress + "%";
+        }
+
+        if(progressStep){
+            progressStep.innerText = job.step || "Scanning...";
+        }
+
+        if(job.status === "completed"){
+            clearInterval(progressTimer);
+            progressTimer = null;
+            showResult(job.result);
+        }
+
+        if(job.status === "failed"){
+            clearInterval(progressTimer);
+            progressTimer = null;
+
+            document.getElementById("out").innerHTML = `
+                <div class="card HIGH">
+                    <h3>❌ Scan Failed</h3>
+                    <p>${job.error || "Unknown error"}</p>
+                </div>
+            `;
+        }
+
+    }, 700);
+}
+
+function showResult(data){
+    lastReport = data;
+
+    const vulns = data.vulnerability_checks || [];
+    const cveGroups = data.cve_results || [];
+    const niktoChecks = data.nikto_checks || [];
+
+    const criticalCount = vulns.filter(v => v.severity === "CRITICAL").length;
+    const highCount = vulns.filter(v => v.severity === "HIGH").length;
+    const mediumCount = vulns.filter(v => v.severity === "MEDIUM").length;
+    const lowCount = vulns.filter(v => v.severity === "LOW").length;
+
+    const cveCount = cveGroups.reduce((sum, group) => {
+        return sum + (group.cves ? group.cves.length : 0);
+    }, 0);
+
+    const openPorts = data.open_ports?.length ? data.open_ports.join(", ") : "None";
+    const foundHeaders = data.security_headers?.found?.length ? data.security_headers.found.join(", ") : "None";
+    const missingHeaders = data.security_headers?.missing?.length ? data.security_headers.missing.join(", ") : "None";
+    const technologies = data.technologies?.length ? data.technologies.join(", ") : "Unknown";
+    const httpMethods = data.http_methods?.length ? data.http_methods.join(", ") : "Unknown";
+
+    const vulnerabilityChecks = vulns.length
+        ? vulns.map(v => `
+            <div class="finding ${v.severity}">
+                <h4>🧨 ${v.name}</h4>
+                <p><b>Severity:</b> ${v.severity}</p>
+                <p><b>Evidence:</b> ${v.evidence}</p>
+                <p><b>Impact:</b> ${v.impact}</p>
+                <p><b>Fix:</b> ${v.fix}</p>
+            </div>
+        `).join("")
+        : "<p>✅ No confirmed vulnerability indicators detected</p>";
+
+    const niktoResults = niktoChecks.length
+        ? niktoChecks.map(n => `
+            <div class="nikto ${n.severity}">
+                <h4>🧪 ${n.name}</h4>
+                <p><b>Severity:</b> ${n.severity}</p>
+                <p><b>Path:</b> ${n.path}</p>
+                <p><b>Status:</b> ${n.status}</p>
+                <p><b>URL:</b> <a href="${n.url}" target="_blank">${n.url}</a></p>
+                <p><b>Evidence:</b> ${n.evidence}</p>
+                <p><b>Fix:</b> ${n.fix}</p>
+            </div>
+        `).join("")
+        : "<p>✅ No Nikto-like exposed paths detected</p>";
+
+    const findings = data.findings?.length
+        ? data.findings.map(f => `
+            <div class="finding ${f.severity}">
+                <h4>🕳️ ${f.title}</h4>
+                <p><b>Severity:</b> ${f.severity}</p>
+                <p><b>Description:</b> ${f.description}</p>
+                <p><b>Fix:</b> ${f.fix}</p>
+            </div>
+        `).join("")
+        : "<p>✅ No major findings detected</p>";
+
+    const subdomains = data.subdomains?.length
+        ? data.subdomains.map(s => `
+            <div class="finding">
+                <p><b>Subdomain:</b> ${s.subdomain}</p>
+                <p><b>IPs:</b> ${s.ips.join(", ")}</p>
+                <p><b>HTTPS:</b> ${s.https ? "✅ Yes" : "❌ No"}</p>
+                <p><b>HTTP:</b> ${s.http ? "✅ Yes" : "❌ No"}</p>
+                <p><b>Status:</b> ${s.status_code || "Unknown"}</p>
+                <p><b>Final URL:</b> ${s.final_url || "N/A"}</p>
+            </div>
+        `).join("")
+        : "<p>No common subdomains found</p>";
+
+    const cveResults = cveGroups.length
+        ? cveGroups.map(group => `
+            <div class="finding">
+                <h4>🧩 Technology: ${group.technology}</h4>
+                ${
+                    group.cves && group.cves.length
+                    ? group.cves.map(cve => `
+                        <div class="cve ${cve.severity || "UNKNOWN"}">
+                            <h4>🚨 ${cve.id}</h4>
+                            <p><b>Severity:</b> ${cve.severity || "UNKNOWN"}</p>
+                            <p><b>CVSS Score:</b> ${cve.score || "N/A"}</p>
+                            <p><b>Published:</b> ${cve.published || "Unknown"}</p>
+                            <p><b>Description:</b> ${cve.description || "No description"}</p>
+                            <p><b>Reference:</b> <a href="${cve.url}" target="_blank">Open NVD Details</a></p>
+                        </div>
+                    `).join("")
+                    : "<p>✅ No CVEs found for this technology</p>"
+                }
+            </div>
+        `).join("")
+        : "<p>No CVE results available</p>";
+
+    document.getElementById("out").innerHTML = `
+        <div class="card ${data.risk}">
+            <h2>🛡️ Scan Result</h2>
+
+            <p><b>Profile:</b> ${data.profile || "full"}</p>
+
+            <div class="summary-grid">
+                <div class="summary-box"><h3>Risk</h3><p>${data.risk}</p></div>
+                <div class="summary-box"><h3>Score</h3><p>${data.score}/100</p></div>
+                <div class="summary-box"><h3>Total Vulns</h3><p>${vulns.length}</p></div>
+                <div class="summary-box"><h3>Nikto Checks</h3><p>${niktoChecks.length}</p></div>
+                <div class="summary-box"><h3>Critical</h3><p>${criticalCount}</p></div>
+                <div class="summary-box"><h3>High</h3><p>${highCount}</p></div>
+                <div class="summary-box"><h3>Medium</h3><p>${mediumCount}</p></div>
+                <div class="summary-box"><h3>Low</h3><p>${lowCount}</p></div>
+                <div class="summary-box"><h3>CVEs</h3><p>${cveCount}</p></div>
+                <div class="summary-box"><h3>Subdomains</h3><p>${data.subdomains?.length || 0}</p></div>
+            </div>
+
+            <h3>🌐 Target: ${data.target}</h3>
+            <p>🖥️ Host: ${data.host}</p>
+            <p>📍 IP: ${data.ip}</p>
+            <p>🔗 Final URL: ${data.final_url || "N/A"}</p>
+            <p>🌍 HTTP Status: <b>${data.status_code}</b></p>
+
+            <hr>
+
+            <h3>🧨 Vulnerability Checks</h3>
+            ${vulnerabilityChecks}
+
+            <hr>
+
+            <h3>🧪 Nikto-like Checks</h3>
+            ${niktoResults}
+
+            <hr>
+
+            <h3>🔒 SSL / TLS</h3>
+            <p>SSL Valid: ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p>
+            <p>SSL Expiration: ${data.ssl?.info || "Unknown"}</p>
+            <p>TLS Version: <b>${data.ssl?.tls_version || "Unknown"}</b></p>
+
+            <hr>
+
+            <h3>🌐 DNS Security</h3>
+            <p><b>A Records:</b> ${data.dns_security?.a_records?.join(", ") || "None"}</p>
+            <p><b>MX Records:</b> ${data.dns_security?.mx_records?.join(", ") || "None"}</p>
+            <p><b>NS Records:</b> ${data.dns_security?.ns_records?.join(", ") || "None"}</p>
+            <p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p>
+            <p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p>
+            <p><b>DNS Issues:</b> ${data.dns_security?.issues?.length ? data.dns_security.issues.join(", ") : "No DNS issues"}</p>
+
+            <hr>
+
+            <h3>🤖 Robots.txt</h3>
+            <p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p>
+            <p><b>Summary:</b> ${data.robots_txt?.summary || "Unknown"}</p>
+            <p><b>Suspicious Entries:</b> ${data.robots_txt?.suspicious_entries?.length ? data.robots_txt.suspicious_entries.join(", ") : "None"}</p>
+
+            <hr>
+
+            <h3>🛡️ Security.txt</h3>
+            <p><b>Exists:</b> ${data.security_txt?.exists ? "✅ Yes" : "❌ No"}</p>
+            <p><b>URL:</b> ${data.security_txt?.url || "N/A"}</p>
+            <p><b>Contacts:</b> ${data.security_txt?.contacts?.length ? data.security_txt.contacts.join(", ") : "None"}</p>
+            <p><b>Policy:</b> ${data.security_txt?.policy || "None"}</p>
+
+            <hr>
+
+            <h3>🌍 Subdomains Discovered</h3>
+            ${subdomains}
+
+            <hr>
+
+            <h3>🧠 Detected Technologies</h3>
+            <p>${technologies}</p>
+
+            <hr>
+
+            <h3>🧬 CVE Results</h3>
+            ${cveResults}
+
+            <hr>
+
+            <h3>🛡️ WAF Detection</h3>
+            <p>${data.waf || "Unknown"}</p>
+
+            <hr>
+
+            <h3>🔁 HTTP Methods</h3>
+            <p>${httpMethods}</p>
+
+            <hr>
+
+            <h3>🚪 Open Ports</h3>
+            <p>${openPorts}</p>
+
+            <hr>
+
+            <h3>🧱 Security Headers</h3>
+            <p>✅ Found: ${foundHeaders}</p>
+            <p>❌ Missing: ${missingHeaders}</p>
+
+            <hr>
+
+            <h3>📋 Findings & Fixes</h3>
+            ${findings}
+        </div>
+    `;
+}
+
+function downloadReport(){
+    if(!lastReport){
+        alert("❌ No report to download");
+        return;
+    }
+
+    const blob = new Blob(
+        [JSON.stringify(lastReport, null, 2)],
+        {type:"application/json"}
+    );
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+
+    a.href = url;
+    a.download = `scan-report-${lastReport.host || "target"}.json`;
+    a.click();
+
+    URL.revokeObjectURL(url);
+}
+
+function downloadPDF(){
+    if(!lastReport){
+        alert("❌ No report to export");
+        return;
+    }
+
+    const win = window.open("", "_blank");
+
+    win.document.write(`
+        <html>
+        <head>
+            <title>Threat Scanner PDF Report</title>
+            <style>
+                body{font-family:Arial;padding:30px;color:#111827}
+                h1,h2{color:#0f172a}
+                .box{border:1px solid #ccc;padding:15px;margin:12px 0;border-radius:8px}
+            </style>
+        </head>
+        <body>
+            <h1>🛡️ Threat Scanner Report</h1>
+
+            <div class="box">
+                <p><b>Target:</b> ${lastReport.target}</p>
+                <p><b>Host:</b> ${lastReport.host}</p>
+                <p><b>Profile:</b> ${lastReport.profile || "full"}</p>
+                <p><b>Risk:</b> ${lastReport.risk}</p>
+                <p><b>Score:</b> ${lastReport.score}/100</p>
+                <p><b>Total Vulnerabilities:</b> ${lastReport.vulnerability_checks?.length || 0}</p>
+                <p><b>Nikto-like Checks:</b> ${lastReport.nikto_checks?.length || 0}</p>
+            </div>
+
+            <script>
+                window.print();
+            <\/script>
+        </body>
+        </html>
+    `);
+
+    win.document.close();
+}
+
+function logout(){
+    if(progressTimer){
+        clearInterval(progressTimer);
+        progressTimer = null;
+    }
+
+    localStorage.removeItem("token");
+    lastReport = null;
+    alert("👋 Logged out");
+}
+</script>
+
+</body>
+</html>
