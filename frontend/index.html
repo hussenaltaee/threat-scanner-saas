@@ -51,6 +51,13 @@ button{
     transition:width .4s ease
 }
 
+.queue-info{
+    background:#334155;
+    padding:12px;
+    border-radius:10px;
+    margin-top:12px;
+}
+
 .summary-grid{
     display:grid;
     grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
@@ -109,7 +116,6 @@ hr{
 }
 
 @media (max-width: 768px){
-
     body{
         padding:12px;
         font-size:14px;
@@ -297,7 +303,12 @@ async function scan(){
                 <div id="progressBar" class="progress-bar">0%</div>
             </div>
 
-            <p id="progressStep">Preparing...</p>
+            <div class="queue-info">
+                <p><b>Status:</b> <span id="queueStatus">starting</span></p>
+                <p><b>Queue Position:</b> <span id="queuePosition">-</span></p>
+                <p><b>Queue Size:</b> <span id="queueSize">-</span></p>
+                <p><b>Step:</b> <span id="progressStep">Preparing...</span></p>
+            </div>
         </div>
     `;
 
@@ -325,7 +336,38 @@ async function scan(){
         return;
     }
 
+    updateQueueUI(data);
     pollScanStatus(data.job_id);
+}
+
+function updateQueueUI(job){
+    const progressBar = document.getElementById("progressBar");
+    const progressStep = document.getElementById("progressStep");
+    const queueStatus = document.getElementById("queueStatus");
+    const queuePosition = document.getElementById("queuePosition");
+    const queueSize = document.getElementById("queueSize");
+
+    if(progressBar){
+        const progress = job.progress || 0;
+        progressBar.style.width = progress + "%";
+        progressBar.innerText = progress + "%";
+    }
+
+    if(progressStep){
+        progressStep.innerText = job.step || job.message || "Scanning...";
+    }
+
+    if(queueStatus){
+        queueStatus.innerText = job.status || "unknown";
+    }
+
+    if(queuePosition){
+        queuePosition.innerText = job.queue_position || "-";
+    }
+
+    if(queueSize){
+        queueSize.innerText = job.queue_size ?? "-";
+    }
 }
 
 function pollScanStatus(jobId){
@@ -354,17 +396,7 @@ function pollScanStatus(jobId){
             return;
         }
 
-        const progressBar = document.getElementById("progressBar");
-        const progressStep = document.getElementById("progressStep");
-
-        if(progressBar){
-            progressBar.style.width = job.progress + "%";
-            progressBar.innerText = job.progress + "%";
-        }
-
-        if(progressStep){
-            progressStep.innerText = job.step || "Scanning...";
-        }
+        updateQueueUI(job);
 
         if(job.status === "completed"){
             clearInterval(progressTimer);
