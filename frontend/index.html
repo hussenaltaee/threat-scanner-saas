@@ -2,6 +2,7 @@
 <html>
 <head>
 <title>Threat SaaS</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
 body{
@@ -105,6 +106,92 @@ a{
 
 hr{
     border:1px solid #334155
+}
+
+@media (max-width: 768px){
+
+    body{
+        padding:12px;
+        font-size:14px;
+    }
+
+    h1{
+        font-size:24px;
+        text-align:center;
+    }
+
+    h2,h3,h4{
+        font-size:18px;
+    }
+
+    input,
+    button,
+    select{
+        width:100%;
+        margin:6px 0;
+        font-size:15px;
+        box-sizing:border-box;
+    }
+
+    .summary-grid{
+        grid-template-columns:1fr 1fr;
+        gap:8px;
+    }
+
+    .summary-box{
+        padding:10px;
+    }
+
+    .summary-box h3{
+        font-size:12px;
+    }
+
+    .summary-box p{
+        font-size:18px;
+    }
+
+    .card{
+        padding:14px;
+        overflow-wrap:anywhere;
+    }
+
+    .finding,
+    .cve,
+    .nikto{
+        padding:10px;
+        overflow-wrap:anywhere;
+    }
+
+    p{
+        overflow-wrap:anywhere;
+        line-height:1.6;
+    }
+
+    a{
+        word-break:break-all;
+    }
+
+    .progress-wrap{
+        height:20px;
+    }
+
+    .progress-bar{
+        font-size:12px;
+    }
+}
+
+@media (max-width: 420px){
+    .summary-grid{
+        grid-template-columns:1fr;
+    }
+
+    body{
+        padding:10px;
+    }
+
+    h1{
+        font-size:22px;
+    }
 }
 </style>
 </head>
