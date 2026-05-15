@@ -1,8 +1,20 @@
 <script>
+const API = "https://threat-scanner-saas.onrender.com";
+
 async function loadData() {
     const token = localStorage.getItem("token");
 
-    const res = await fetch("http://127.0.0.1:8000/history", {
+    if (!token) {
+        document.getElementById("container").innerHTML = `
+            <div class="card high">
+                <h3>❌ Not Logged In</h3>
+                <p>Please login first from index.html</p>
+            </div>
+        `;
+        return;
+    }
+
+    const res = await fetch(API + "/history", {
         headers: {
             "Authorization": "Bearer " + token
         }
@@ -13,21 +25,131 @@ async function loadData() {
     const container = document.getElementById("container");
     container.innerHTML = "";
 
+    if (!res.ok) {
+        container.innerHTML = `
+            <div class="card high">
+                <h3>❌ Error</h3>
+                <p>${data.detail || "Could not load history"}</p>
+            </div>
+        `;
+        return;
+    }
+
+    if (!data.data || data.data.length === 0) {
+        container.innerHTML = `
+            <div class="card">
+                <h3>📭 No Scan History</h3>
+                <p>No scans found yet.</p>
+            </div>
+        `;
+        return;
+    }
+
     data.data.forEach(item => {
+        const id = item[0];
+        const target = item[1];
+        const risk = item[2];
+        const score = item[3];
+        const date = item[4];
 
         let cls = "low";
-        if (item[2] === "HIGH") cls = "high";
-        if (item[2] === "MEDIUM") cls = "medium";
+        if (risk === "HIGH") cls = "high";
+        if (risk === "MEDIUM") cls = "medium";
 
         container.innerHTML += `
             <div class="card ${cls}">
-                <h3>${item[1]}</h3>
-                <p>Risk: ${item[2]}</p>
-                <p>Score: ${item[3]}</p>
-                <p>${item[4]}</p>
+                <h3>🌐 ${target}</h3>
+                <p><b>Risk:</b> ${risk}</p>
+                <p><b>Score:</b> ${score}/100</p>
+                <p><b>Date:</b> ${date}</p>
+                <button onclick="viewReport(${id})">View Report</button>
             </div>
         `;
     });
+}
+
+async function viewReport(id) {
+    const token = localStorage.getItem("token");
+
+    const res = await fetch(API + "/history/" + id, {
+        headers: {
+            "Authorization": "Bearer " + token
+        }
+    });
+
+    const report = await res.json();
+
+    if (!res.ok) {
+        alert(report.detail || "Could not load report");
+        return;
+    }
+
+    const win = window.open("", "_blank");
+
+    win.document.write(`
+        <html>
+        <head>
+            <title>Scan Report</title>
+            <style>
+                body {
+                    font-family: Arial;
+                    background: #0f172a;
+                    color: white;
+                    padding: 25px;
+                }
+
+                .box {
+                    background: #1e293b;
+                    padding: 15px;
+                    border-radius: 10px;
+                    margin: 10px 0;
+                    border-left: 5px solid #38bdf8;
+                }
+
+                pre {
+                    white-space: pre-wrap;
+                    word-break: break-word;
+                    background: #020617;
+                    padding: 15px;
+                    border-radius: 10px;
+                    overflow-x: auto;
+                }
+
+                button {
+                    padding: 10px;
+                    border: none;
+                    border-radius: 6px;
+                    background: #38bdf8;
+                    font-weight: bold;
+                    cursor: pointer;
+                }
+            </style>
+        </head>
+
+        <body>
+            <h1>🛡️ Scan Report</h1>
+
+            <div class="box">
+                <p><b>Target:</b> ${report.target}</p>
+                <p><b>Risk:</b> ${report.risk}</p>
+                <p><b>Score:</b> ${report.score}/100</p>
+                <p><b>Profile:</b> ${report.profile || "full"}</p>
+            </div>
+
+            <h2>Full JSON Report</h2>
+            <pre>${JSON.stringify(report, null, 2)}</pre>
+
+            <button onclick="window.print()">Download / Print PDF</button>
+        </body>
+        </html>
+    `);
+
+    win.document.close();
+}
+
+function logout() {
+    localStorage.removeItem("token");
+    window.location.href = "index.html";
 }
 
 loadData();
