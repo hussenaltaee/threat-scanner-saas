@@ -52,8 +52,6 @@ security = HTTPBearer()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
-
-# Force HTTPS in production
 app.add_middleware(HTTPSRedirectMiddleware)
 
 app.add_middleware(
@@ -187,6 +185,33 @@ def get_queue_position(job_id):
         return None
 
 
+def remove_job_from_queue(job_id):
+    if not scan_queue:
+        return False
+
+    try:
+        old_items = list(scan_queue._queue)
+        new_items = []
+        removed = False
+
+        for item in old_items:
+            if item.get("job_id") == job_id:
+                removed = True
+            else:
+                new_items.append(item)
+
+        scan_queue._queue.clear()
+
+        for item in new_items:
+            scan_queue._queue.append(item)
+
+        return removed
+
+    except Exception as e:
+        logger.error(f"Failed to remove job from queue | job_id={job_id} | error={e}")
+        return False
+
+
 async def scan_worker():
     logger.info("Scan queue worker started")
 
@@ -199,6 +224,10 @@ async def scan_worker():
         username = job["username"]
 
         try:
+            if scan_jobs.get(job_id, {}).get("status") == "cancelled":
+                logger.info(f"Skipping cancelled job | job_id={job_id}")
+                continue
+
             await run_scan_job(job_id, target, profile, username)
 
         except Exception as e:
@@ -270,17 +299,12 @@ async def scan(
     user=Depends(get_current_user)
 ):
     result = await analyze(data.target, data.profile)
-
     result["profile"] = data.profile
 
     save_scan_result(data.target, result, user["username"])
 
     if result["risk"] == "HIGH":
-        send_discord_alert(
-            data.target,
-            result["risk"],
-            result["score"]
-        )
+        send_discord_alert(data.target, result["risk"], result["score"])
 
     return result
 
@@ -310,7 +334,8 @@ async def scan_async(
         "created_at": datetime.utcnow().isoformat(),
         "started_at": None,
         "completed_at": None,
-        "queue_position": None
+        "queue_position": None,
+        "cancel_requested": False
     }
 
     await scan_queue.put({
@@ -332,8 +357,70 @@ async def scan_async(
     }
 
 
+@app.post("/cancel-scan/{job_id}")
+@limiter.limit("20/minute")
+def cancel_scan(
+    request: Request,
+    job_id: str,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    job = scan_jobs.get(job_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Scan job not found")
+
+    if job["status"] in ["completed", "failed", "cancelled"]:
+        return {
+            "job_id": job_id,
+            "status": job["status"],
+            "message": f"Scan already {job['status']}"
+        }
+
+    job["cancel_requested"] = True
+
+    if job["status"] == "queued":
+        removed = remove_job_from_queue(job_id)
+
+        job["status"] = "cancelled"
+        job["progress"] = 0
+        job["step"] = "Scan cancelled before running"
+        job["completed_at"] = datetime.utcnow().isoformat()
+        job["queue_position"] = None
+
+        return {
+            "job_id": job_id,
+            "status": "cancelled",
+            "removed_from_queue": removed,
+            "message": "Scan cancelled"
+        }
+
+    if job["status"] == "running":
+        job["status"] = "cancelled"
+        job["step"] = "Cancel requested. Current scan will stop after current operation."
+        job["completed_at"] = datetime.utcnow().isoformat()
+
+        return {
+            "job_id": job_id,
+            "status": "cancelled",
+            "message": "Cancel requested"
+        }
+
+    return {
+        "job_id": job_id,
+        "status": job["status"],
+        "message": "Cancel request processed"
+    }
+
+
 async def run_scan_job(job_id, target, profile, username):
     try:
+        if scan_jobs[job_id].get("cancel_requested"):
+            scan_jobs[job_id]["status"] = "cancelled"
+            scan_jobs[job_id]["step"] = "Scan cancelled"
+            scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
+            return
+
         scan_jobs[job_id]["status"] = "running"
         scan_jobs[job_id]["started_at"] = datetime.utcnow().isoformat()
         scan_jobs[job_id]["queue_position"] = None
@@ -342,10 +429,22 @@ async def run_scan_job(job_id, target, profile, username):
 
         await asyncio.sleep(0.3)
 
+        if scan_jobs[job_id].get("cancel_requested"):
+            scan_jobs[job_id]["status"] = "cancelled"
+            scan_jobs[job_id]["step"] = "Scan cancelled"
+            scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
+            return
+
         scan_jobs[job_id]["progress"] = 20
         scan_jobs[job_id]["step"] = "Checking DNS"
 
         await asyncio.sleep(0.3)
+
+        if scan_jobs[job_id].get("cancel_requested"):
+            scan_jobs[job_id]["status"] = "cancelled"
+            scan_jobs[job_id]["step"] = "Scan cancelled"
+            scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
+            return
 
         scan_jobs[job_id]["progress"] = 35
         scan_jobs[job_id]["step"] = "Checking SSL / TLS"
@@ -365,7 +464,19 @@ async def run_scan_job(job_id, target, profile, username):
         scan_jobs[job_id]["progress"] = 80
         scan_jobs[job_id]["step"] = "Checking CVEs and subdomains"
 
+        if scan_jobs[job_id].get("cancel_requested"):
+            scan_jobs[job_id]["status"] = "cancelled"
+            scan_jobs[job_id]["step"] = "Scan cancelled before analysis"
+            scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
+            return
+
         result = await analyze(target, profile)
+
+        if scan_jobs[job_id].get("cancel_requested") or scan_jobs[job_id].get("status") == "cancelled":
+            scan_jobs[job_id]["status"] = "cancelled"
+            scan_jobs[job_id]["step"] = "Scan cancelled after analysis"
+            scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
+            return
 
         result["profile"] = profile
 
@@ -375,11 +486,7 @@ async def run_scan_job(job_id, target, profile, username):
         save_scan_result(target, result, username)
 
         if result["risk"] == "HIGH":
-            send_discord_alert(
-                target,
-                result["risk"],
-                result["score"]
-            )
+            send_discord_alert(target, result["risk"], result["score"])
 
         scan_jobs[job_id]["status"] = "completed"
         scan_jobs[job_id]["progress"] = 100
@@ -427,32 +534,19 @@ def queue_status(
 ):
     queue_size = scan_queue.qsize() if scan_queue else 0
 
-    running_jobs = [
-        job for job in scan_jobs.values()
-        if job.get("status") == "running"
-    ]
-
-    queued_jobs = [
-        job for job in scan_jobs.values()
-        if job.get("status") == "queued"
-    ]
-
-    completed_jobs = [
-        job for job in scan_jobs.values()
-        if job.get("status") == "completed"
-    ]
-
-    failed_jobs = [
-        job for job in scan_jobs.values()
-        if job.get("status") == "failed"
-    ]
+    running_jobs = [job for job in scan_jobs.values() if job.get("status") == "running"]
+    queued_jobs = [job for job in scan_jobs.values() if job.get("status") == "queued"]
+    completed_jobs = [job for job in scan_jobs.values() if job.get("status") == "completed"]
+    failed_jobs = [job for job in scan_jobs.values() if job.get("status") == "failed"]
+    cancelled_jobs = [job for job in scan_jobs.values() if job.get("status") == "cancelled"]
 
     return {
         "queue_size": queue_size,
         "running": len(running_jobs),
         "queued": len(queued_jobs),
         "completed": len(completed_jobs),
-        "failed": len(failed_jobs)
+        "failed": len(failed_jobs),
+        "cancelled": len(cancelled_jobs)
     }
 
 
