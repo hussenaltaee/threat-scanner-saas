@@ -25,6 +25,12 @@ button{
     font-weight:bold
 }
 
+.cancel-btn{
+    background:#ef4444;
+    color:white;
+    margin-top:10px;
+}
+
 .card{
     background:#1e293b;
     padding:18px;
@@ -241,6 +247,7 @@ hr{
 let API = "https://threat-scanner-saas.onrender.com";
 let lastReport = null;
 let progressTimer = null;
+let currentJobId = null;
 
 async function register(){
     const username = document.getElementById("r_user").value;
@@ -291,6 +298,7 @@ async function scan(){
         progressTimer = null;
     }
 
+    currentJobId = null;
     lastReport = null;
 
     document.getElementById("out").innerHTML = `
@@ -309,6 +317,8 @@ async function scan(){
                 <p><b>Queue Size:</b> <span id="queueSize">-</span></p>
                 <p><b>Step:</b> <span id="progressStep">Preparing...</span></p>
             </div>
+
+            <button class="cancel-btn" onclick="cancelScan()">Cancel Scan</button>
         </div>
     `;
 
@@ -336,6 +346,7 @@ async function scan(){
         return;
     }
 
+    currentJobId = data.job_id;
     updateQueueUI(data);
     pollScanStatus(data.job_id);
 }
@@ -370,6 +381,44 @@ function updateQueueUI(job){
     }
 }
 
+async function cancelScan(){
+    const token = localStorage.getItem("token");
+
+    if(!currentJobId){
+        alert("No active scan to cancel");
+        return;
+    }
+
+    const res = await fetch(API + "/cancel-scan/" + currentJobId, {
+        method:"POST",
+        headers:{
+            "Authorization":"Bearer " + token
+        }
+    });
+
+    const data = await res.json();
+
+    if(!res.ok){
+        alert(data.detail || "Could not cancel scan");
+        return;
+    }
+
+    if(progressTimer){
+        clearInterval(progressTimer);
+        progressTimer = null;
+    }
+
+    document.getElementById("out").innerHTML = `
+        <div class="card HIGH">
+            <h3>🛑 Scan Cancelled</h3>
+            <p><b>Job ID:</b> ${data.job_id}</p>
+            <p>${data.message}</p>
+        </div>
+    `;
+
+    currentJobId = null;
+}
+
 function pollScanStatus(jobId){
     const token = localStorage.getItem("token");
 
@@ -386,6 +435,7 @@ function pollScanStatus(jobId){
         if(!res.ok){
             clearInterval(progressTimer);
             progressTimer = null;
+            currentJobId = null;
 
             document.getElementById("out").innerHTML = `
                 <div class="card HIGH">
@@ -401,17 +451,32 @@ function pollScanStatus(jobId){
         if(job.status === "completed"){
             clearInterval(progressTimer);
             progressTimer = null;
+            currentJobId = null;
             showResult(job.result);
         }
 
         if(job.status === "failed"){
             clearInterval(progressTimer);
             progressTimer = null;
+            currentJobId = null;
 
             document.getElementById("out").innerHTML = `
                 <div class="card HIGH">
                     <h3>❌ Scan Failed</h3>
                     <p>${job.error || "Unknown error"}</p>
+                </div>
+            `;
+        }
+
+        if(job.status === "cancelled"){
+            clearInterval(progressTimer);
+            progressTimer = null;
+            currentJobId = null;
+
+            document.getElementById("out").innerHTML = `
+                <div class="card HIGH">
+                    <h3>🛑 Scan Cancelled</h3>
+                    <p>${job.step || "Scan was cancelled"}</p>
                 </div>
             `;
         }
@@ -693,6 +758,7 @@ function logout(){
     }
 
     localStorage.removeItem("token");
+    currentJobId = null;
     lastReport = null;
     alert("👋 Logged out");
 }
