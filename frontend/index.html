@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
+<meta charset="UTF-8">
 <title>Threat SaaS</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -304,6 +305,22 @@ function pollScanStatus(jobId){
     }, 700);
 }
 
+function formatObject(obj){
+    if(!obj || typeof obj !== "object"){
+        return "Unknown";
+    }
+
+    const parts = [];
+
+    for(const key in obj){
+        if(obj[key]){
+            parts.push(`${key}: ${obj[key]}`);
+        }
+    }
+
+    return parts.length ? parts.join(", ") : "Unknown";
+}
+
 function showResult(data){
     lastReport = data;
 
@@ -340,6 +357,9 @@ function showResult(data){
     const missingHeaders = data.security_headers?.missing?.length ? data.security_headers.missing.join(", ") : "None";
     const technologies = data.technologies?.length ? data.technologies.join(", ") : "Unknown";
     const httpMethods = data.http_methods?.length ? data.http_methods.join(", ") : "Unknown";
+
+    const sslSubject = formatObject(data.ssl?.subject);
+    const sslIssuer = formatObject(data.ssl?.issuer);
 
     const vulnerabilityChecks = vulns.length
         ? vulns.map(v => `
@@ -454,6 +474,11 @@ function showResult(data){
             <p>SSL Valid: ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p>
             <p>SSL Expiration: ${data.ssl?.info || "Unknown"}</p>
             <p>TLS Version: <b>${data.ssl?.tls_version || "Unknown"}</b></p>
+            <p>Cipher Name: <b>${data.ssl?.cipher_name || "Unknown"}</b></p>
+            <p>Cipher Protocol: <b>${data.ssl?.cipher_protocol || "Unknown"}</b></p>
+            <p>Cipher Bits: <b>${data.ssl?.cipher_bits || "Unknown"}</b></p>
+            <p><b>Certificate Subject:</b> ${sslSubject}</p>
+            <p><b>Certificate Issuer:</b> ${sslIssuer}</p>
 
             <hr>
 
@@ -570,6 +595,8 @@ function downloadPDF(){
                 <p><b>Score:</b> ${lastReport.score}/100</p>
                 <p><b>Total Vulnerabilities:</b> ${lastReport.vulnerability_checks?.length || 0}</p>
                 <p><b>Nikto-like Checks:</b> ${lastReport.nikto_checks?.length || 0}</p>
+                <p><b>TLS Version:</b> ${lastReport.ssl?.tls_version || "Unknown"}</p>
+                <p><b>Cipher:</b> ${lastReport.ssl?.cipher_name || "Unknown"}</p>
             </div>
 
             <script>
