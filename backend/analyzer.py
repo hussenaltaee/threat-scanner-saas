@@ -5,8 +5,29 @@ import httpx
 import dns.resolver
 from urllib.parse import urlparse
 
-COMMON_PORTS = [80, 443, 8080, 8443]
+COMMON_PORTS = [
+    21, 22, 25, 53, 80, 110, 143, 443,
+    8080, 8443
+]
+
 RISKY_PORTS = [21, 22, 25, 3306, 5432, 6379, 27017]
+
+PORT_SERVICES = {
+    21: "FTP",
+    22: "SSH",
+    25: "SMTP",
+    53: "DNS",
+    80: "HTTP",
+    110: "POP3",
+    143: "IMAP",
+    443: "HTTPS",
+    3306: "MySQL",
+    5432: "PostgreSQL",
+    6379: "Redis",
+    8080: "HTTP-Alt",
+    8443: "HTTPS-Alt",
+    27017: "MongoDB"
+}
 
 COMMON_SUBDOMAINS = [
     "www", "api", "admin", "dev", "staging", "test",
@@ -173,9 +194,26 @@ async def check_port(host, port):
     try:
         conn = asyncio.open_connection(host, port)
         reader, writer = await asyncio.wait_for(conn, timeout=1.5)
+
+        banner = None
+
+        try:
+            data = await asyncio.wait_for(reader.read(128), timeout=1)
+            if data:
+                banner = data.decode(errors="ignore").strip()
+        except:
+            banner = None
+
         writer.close()
         await writer.wait_closed()
-        return port
+
+        return {
+            "port": port,
+            "service": PORT_SERVICES.get(port, "Unknown"),
+            "banner": banner[:120] if banner else None,
+            "risk": "RISKY" if port in RISKY_PORTS else "NORMAL"
+        }
+
     except:
         return None
 
@@ -1146,11 +1184,17 @@ async def analyze(target, profile="full"):
             item["fix"]
         )
 
-    risky_open = [p for p in open_ports if p in RISKY_PORTS]
+    risky_open = [
+        p for p in open_ports
+        if p.get("port") in RISKY_PORTS
+    ]
 
     if risky_open:
         score += len(risky_open) * 12
-        ports_text = ", ".join(map(str, risky_open))
+        ports_text = ", ".join([
+            f"{p['port']} ({p['service']})"
+            for p in risky_open
+        ])
         vulnerabilities.append(f"Risky open ports detected: {ports_text}")
 
         add_vuln(
