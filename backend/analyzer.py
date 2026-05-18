@@ -222,12 +222,37 @@ async def check_ssl(host):
     def ssl_job():
         try:
             context = ssl.create_default_context()
+
             with socket.create_connection((host, 443), timeout=3) as sock:
                 with context.wrap_socket(sock, server_hostname=host) as ssock:
                     cert = ssock.getpeercert()
-                    return True, cert.get("notAfter"), ssock.version()
+                    cipher = ssock.cipher()
+
+                    subject = dict(x[0] for x in cert.get("subject", []))
+                    issuer = dict(x[0] for x in cert.get("issuer", []))
+
+                    return {
+                        "valid": True,
+                        "expires": cert.get("notAfter"),
+                        "tls_version": ssock.version(),
+                        "cipher_name": cipher[0] if cipher else None,
+                        "cipher_protocol": cipher[1] if cipher else None,
+                        "cipher_bits": cipher[2] if cipher else None,
+                        "subject": subject,
+                        "issuer": issuer
+                    }
+
         except Exception as e:
-            return False, str(e), None
+            return {
+                "valid": False,
+                "expires": str(e),
+                "tls_version": None,
+                "cipher_name": None,
+                "cipher_protocol": None,
+                "cipher_bits": None,
+                "subject": {},
+                "issuer": {}
+            }
 
     return await asyncio.to_thread(ssl_job)
 
@@ -799,7 +824,9 @@ async def analyze(target, profile="full"):
             sensitive_task
         )
 
-        ssl_ok, ssl_info, tls_version = ssl_result
+        ssl_ok = ssl_result.get("valid")
+        ssl_info = ssl_result.get("expires")
+        tls_version = ssl_result.get("tls_version")
         open_ports = [p for p in ports_result if p]
         exposed_paths = [p for p in sensitive_result if p]
 
@@ -1276,7 +1303,12 @@ async def analyze(target, profile="full"):
         "ssl": {
             "valid": ssl_ok,
             "info": ssl_info,
-            "tls_version": tls_version
+            "tls_version": tls_version,
+            "cipher_name": ssl_result.get("cipher_name"),
+            "cipher_protocol": ssl_result.get("cipher_protocol"),
+            "cipher_bits": ssl_result.get("cipher_bits"),
+            "subject": ssl_result.get("subject"),
+            "issuer": ssl_result.get("issuer")
         },
         "dns_security": dns_security,
         "robots_txt": robots_txt,
