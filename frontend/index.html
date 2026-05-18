@@ -5,205 +5,44 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <style>
-body{
-    font-family:Arial;
-    background:#0f172a;
-    color:white;
-    padding:25px
+body{font-family:Arial;background:#0f172a;color:white;padding:25px}
+input,button,select{padding:10px;margin:5px;border-radius:6px;border:none}
+button{background:#38bdf8;cursor:pointer;font-weight:bold}
+.cancel-btn{background:#ef4444;color:white;margin-top:10px}
+.card{background:#1e293b;padding:18px;margin-top:15px;border-radius:12px;border-left:6px solid #38bdf8}
+.progress-wrap{background:#334155;border-radius:12px;overflow:hidden;height:22px;margin:15px 0}
+.progress-bar{background:#38bdf8;height:100%;width:0%;text-align:center;color:#0f172a;font-weight:bold;transition:width .4s ease}
+.queue-info{background:#334155;padding:12px;border-radius:10px;margin-top:12px}
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:15px 0}
+.summary-box{background:#334155;padding:15px;border-radius:10px;text-align:center}
+.summary-box h3{margin:0;font-size:14px;color:#cbd5e1}
+.summary-box p{font-size:24px;font-weight:bold;margin:8px 0 0}
+.LOW{border-left-color:#22c55e}.MEDIUM{border-left-color:#f59e0b}.HIGH{border-left-color:#ef4444}.CRITICAL{border-left-color:#dc2626}.UNKNOWN{border-left-color:#94a3b8}.INFO{border-left-color:#38bdf8}
+.finding{background:#334155;padding:12px;margin:10px 0;border-radius:8px}
+.cve,.nikto{background:#111827;padding:14px;margin:10px 0;border-radius:8px;border-left:4px solid #38bdf8}
+a{color:#38bdf8;text-decoration:none}
+hr{border:1px solid #334155}
+
+@media (max-width:768px){
+body{padding:12px;font-size:14px}
+h1{font-size:24px;text-align:center}
+h2,h3,h4{font-size:18px}
+input,button,select{width:100%;margin:6px 0;font-size:15px;box-sizing:border-box}
+.summary-grid{grid-template-columns:1fr 1fr;gap:8px}
+.summary-box{padding:10px}
+.summary-box h3{font-size:12px}
+.summary-box p{font-size:18px}
+.card,.finding,.cve,.nikto{padding:14px;overflow-wrap:anywhere}
+p{overflow-wrap:anywhere;line-height:1.6}
+a{word-break:break-all}
+.progress-wrap{height:20px}
+.progress-bar{font-size:12px}
 }
 
-input,button,select{
-    padding:10px;
-    margin:5px;
-    border-radius:6px;
-    border:none
-}
-
-button{
-    background:#38bdf8;
-    cursor:pointer;
-    font-weight:bold
-}
-
-.cancel-btn{
-    background:#ef4444;
-    color:white;
-    margin-top:10px;
-}
-
-.card{
-    background:#1e293b;
-    padding:18px;
-    margin-top:15px;
-    border-radius:12px;
-    border-left:6px solid #38bdf8
-}
-
-.progress-wrap{
-    background:#334155;
-    border-radius:12px;
-    overflow:hidden;
-    height:22px;
-    margin:15px 0
-}
-
-.progress-bar{
-    background:#38bdf8;
-    height:100%;
-    width:0%;
-    text-align:center;
-    color:#0f172a;
-    font-weight:bold;
-    transition:width .4s ease
-}
-
-.queue-info{
-    background:#334155;
-    padding:12px;
-    border-radius:10px;
-    margin-top:12px;
-}
-
-.summary-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
-    gap:12px;
-    margin:15px 0
-}
-
-.summary-box{
-    background:#334155;
-    padding:15px;
-    border-radius:10px;
-    text-align:center
-}
-
-.summary-box h3{
-    margin:0;
-    font-size:14px;
-    color:#cbd5e1
-}
-
-.summary-box p{
-    font-size:24px;
-    font-weight:bold;
-    margin:8px 0 0
-}
-
-.LOW{border-left-color:#22c55e}
-.MEDIUM{border-left-color:#f59e0b}
-.HIGH{border-left-color:#ef4444}
-.CRITICAL{border-left-color:#dc2626}
-.UNKNOWN{border-left-color:#94a3b8}
-.INFO{border-left-color:#38bdf8}
-
-.finding{
-    background:#334155;
-    padding:12px;
-    margin:10px 0;
-    border-radius:8px
-}
-
-.cve,.nikto{
-    background:#111827;
-    padding:14px;
-    margin:10px 0;
-    border-radius:8px;
-    border-left:4px solid #38bdf8
-}
-
-a{
-    color:#38bdf8;
-    text-decoration:none
-}
-
-hr{
-    border:1px solid #334155
-}
-
-@media (max-width: 768px){
-    body{
-        padding:12px;
-        font-size:14px;
-    }
-
-    h1{
-        font-size:24px;
-        text-align:center;
-    }
-
-    h2,h3,h4{
-        font-size:18px;
-    }
-
-    input,
-    button,
-    select{
-        width:100%;
-        margin:6px 0;
-        font-size:15px;
-        box-sizing:border-box;
-    }
-
-    .summary-grid{
-        grid-template-columns:1fr 1fr;
-        gap:8px;
-    }
-
-    .summary-box{
-        padding:10px;
-    }
-
-    .summary-box h3{
-        font-size:12px;
-    }
-
-    .summary-box p{
-        font-size:18px;
-    }
-
-    .card{
-        padding:14px;
-        overflow-wrap:anywhere;
-    }
-
-    .finding,
-    .cve,
-    .nikto{
-        padding:10px;
-        overflow-wrap:anywhere;
-    }
-
-    p{
-        overflow-wrap:anywhere;
-        line-height:1.6;
-    }
-
-    a{
-        word-break:break-all;
-    }
-
-    .progress-wrap{
-        height:20px;
-    }
-
-    .progress-bar{
-        font-size:12px;
-    }
-}
-
-@media (max-width: 420px){
-    .summary-grid{
-        grid-template-columns:1fr;
-    }
-
-    body{
-        padding:10px;
-    }
-
-    h1{
-        font-size:22px;
-    }
+@media (max-width:420px){
+.summary-grid{grid-template-columns:1fr}
+body{padding:10px}
+h1{font-size:22px}
 }
 </style>
 </head>
@@ -231,9 +70,9 @@ hr{
 <input id="t" placeholder="example.com">
 
 <select id="scan_profile">
-    <option value="quick">⚡ Quick Scan</option>
-    <option value="full" selected>🛡️ Full Scan</option>
-    <option value="deep">🔥 Deep Scan</option>
+<option value="quick">⚡ Quick Scan</option>
+<option value="full" selected>🛡️ Full Scan</option>
+<option value="deep">🔥 Deep Scan</option>
 </select>
 
 <button onclick="scan()">Scan</button>
@@ -328,10 +167,7 @@ async function scan(){
             "Content-Type":"application/json",
             "Authorization":"Bearer " + token
         },
-        body:JSON.stringify({
-            target: target,
-            profile: profile
-        })
+        body:JSON.stringify({target, profile})
     });
 
     const data = await res.json();
@@ -364,21 +200,10 @@ function updateQueueUI(job){
         progressBar.innerText = progress + "%";
     }
 
-    if(progressStep){
-        progressStep.innerText = job.step || job.message || "Scanning...";
-    }
-
-    if(queueStatus){
-        queueStatus.innerText = job.status || "unknown";
-    }
-
-    if(queuePosition){
-        queuePosition.innerText = job.queue_position || "-";
-    }
-
-    if(queueSize){
-        queueSize.innerText = job.queue_size ?? "-";
-    }
+    if(progressStep) progressStep.innerText = job.step || job.message || "Scanning...";
+    if(queueStatus) queueStatus.innerText = job.status || "unknown";
+    if(queuePosition) queuePosition.innerText = job.queue_position || "-";
+    if(queueSize) queueSize.innerText = job.queue_size ?? "-";
 }
 
 async function cancelScan(){
@@ -391,9 +216,7 @@ async function cancelScan(){
 
     const res = await fetch(API + "/cancel-scan/" + currentJobId, {
         method:"POST",
-        headers:{
-            "Authorization":"Bearer " + token
-        }
+        headers:{"Authorization":"Bearer " + token}
     });
 
     const data = await res.json();
@@ -425,9 +248,7 @@ function pollScanStatus(jobId){
     progressTimer = setInterval(async () => {
         const res = await fetch(API + "/scan-status/" + jobId, {
             method:"GET",
-            headers:{
-                "Authorization":"Bearer " + token
-            }
+            headers:{"Authorization":"Bearer " + token}
         });
 
         const job = await res.json();
@@ -480,7 +301,6 @@ function pollScanStatus(jobId){
                 </div>
             `;
         }
-
     }, 700);
 }
 
@@ -500,7 +320,22 @@ function showResult(data){
         return sum + (group.cves ? group.cves.length : 0);
     }, 0);
 
-    const openPorts = data.open_ports?.length ? data.open_ports.join(", ") : "None";
+    const openPorts = data.open_ports?.length
+        ? data.open_ports.map(p => {
+            if (typeof p === "object") {
+                return `
+                    <div class="finding ${p.risk === "RISKY" ? "MEDIUM" : "INFO"}">
+                        <p><b>Port:</b> ${p.port}</p>
+                        <p><b>Service:</b> ${p.service || "Unknown"}</p>
+                        <p><b>Risk:</b> ${p.risk || "NORMAL"}</p>
+                        <p><b>Banner:</b> ${p.banner || "-"}</p>
+                    </div>
+                `;
+            }
+            return `<p>${p}</p>`;
+        }).join("")
+        : "<p>None</p>";
+
     const foundHeaders = data.security_headers?.found?.length ? data.security_headers.found.join(", ") : "None";
     const missingHeaders = data.security_headers?.missing?.length ? data.security_headers.missing.join(", ") : "None";
     const technologies = data.technologies?.length ? data.technologies.join(", ") : "Unknown";
@@ -673,7 +508,7 @@ function showResult(data){
             <hr>
 
             <h3>🚪 Open Ports</h3>
-            <p>${openPorts}</p>
+            ${openPorts}
 
             <hr>
 
@@ -695,11 +530,7 @@ function downloadReport(){
         return;
     }
 
-    const blob = new Blob(
-        [JSON.stringify(lastReport, null, 2)],
-        {type:"application/json"}
-    );
-
+    const blob = new Blob([JSON.stringify(lastReport, null, 2)], {type:"application/json"});
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
 
