@@ -19,7 +19,14 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from slowapi.extension import _rate_limit_exceeded_handler
 
-from db import get_connection, init_db, create_user, verify_user
+from db import (
+    get_connection,
+    init_db,
+    create_user,
+    verify_user,
+    save_scan
+)
+
 from analyzer import analyze
 
 load_dotenv()
@@ -69,12 +76,11 @@ scan_queue = None
 queue_worker_task = None
 
 
-def create_token(data):
-    username = data.get("username")
-
+def create_token(user):
     payload = {
-        "sub": username,
-        "username": username,
+        "sub": user["username"],
+        "user_id": user["id"],
+        "username": user["username"],
         "iss": JWT_ISSUER,
         "aud": JWT_AUDIENCE,
         "iat": datetime.utcnow(),
@@ -101,10 +107,13 @@ def get_current_user(request: Request):
             audience=JWT_AUDIENCE
         )
 
-        if not payload.get("username"):
+        if not payload.get("username") or not payload.get("user_id"):
             raise HTTPException(status_code=401, detail="Invalid token payload")
 
-        return payload
+        return {
+            "id": payload["user_id"],
+            "username": payload["username"]
+        }
 
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
@@ -148,24 +157,15 @@ Time: {datetime.now()}
         logger.error(f"Discord alert failed: {e}")
 
 
-def save_scan_result(target, result, username):
-    conn = get_connection()
-    c = conn.cursor()
-
-    c.execute(
-        "INSERT INTO scans (target, risk, score, alerts, report, user) VALUES (?, ?, ?, ?, ?, ?)",
-        (
-            target,
-            result["risk"],
-            result["score"],
-            json.dumps(result.get("alerts", [])),
-            json.dumps(result),
-            username
-        )
+def save_scan_result(target, result, user_id):
+    save_scan(
+        user_id=user_id,
+        target=target,
+        risk=result.get("risk"),
+        score=result.get("score"),
+        alerts=json.dumps(result.get("alerts", [])),
+        report=json.dumps(result)
     )
-
-    conn.commit()
-    conn.close()
 
 
 def get_queue_position(job_id):
@@ -221,14 +221,14 @@ async def scan_worker():
         job_id = job["job_id"]
         target = job["target"]
         profile = job["profile"]
-        username = job["username"]
+        user_id = job["user_id"]
 
         try:
             if scan_jobs.get(job_id, {}).get("status") == "cancelled":
                 logger.info(f"Skipping cancelled job | job_id={job_id}")
                 continue
 
-            await run_scan_job(job_id, target, profile, username)
+            await run_scan_job(job_id, target, profile, user_id)
 
         except Exception as e:
             logger.exception(f"Queue worker failed | job_id={job_id}")
@@ -285,9 +285,16 @@ def login(request: Request, data: LoginRequest):
         logger.warning(f"Login failed: invalid credentials | username={data.username}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_token({"username": data.username})
+    token = create_token(user)
 
-    return {"access_token": token}
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user["id"],
+            "username": user["username"]
+        }
+    }
 
 
 @app.post("/scan")
@@ -301,10 +308,10 @@ async def scan(
     result = await analyze(data.target, data.profile)
     result["profile"] = data.profile
 
-    save_scan_result(data.target, result, user["username"])
+    save_scan_result(data.target, result, user["id"])
 
-    if result["risk"] == "HIGH":
-        send_discord_alert(data.target, result["risk"], result["score"])
+    if result.get("risk") == "HIGH":
+        send_discord_alert(data.target, result.get("risk"), result.get("score"))
 
     return result
 
@@ -335,14 +342,15 @@ async def scan_async(
         "started_at": None,
         "completed_at": None,
         "queue_position": None,
-        "cancel_requested": False
+        "cancel_requested": False,
+        "user_id": user["id"]
     }
 
     await scan_queue.put({
         "job_id": job_id,
         "target": data.target,
         "profile": data.profile,
-        "username": user["username"]
+        "user_id": user["id"]
     })
 
     position = get_queue_position(job_id)
@@ -369,6 +377,9 @@ def cancel_scan(
 
     if not job:
         raise HTTPException(status_code=404, detail="Scan job not found")
+
+    if job.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
 
     if job["status"] in ["completed", "failed", "cancelled"]:
         return {
@@ -413,7 +424,7 @@ def cancel_scan(
     }
 
 
-async def run_scan_job(job_id, target, profile, username):
+async def run_scan_job(job_id, target, profile, user_id):
     try:
         if scan_jobs[job_id].get("cancel_requested"):
             scan_jobs[job_id]["status"] = "cancelled"
@@ -483,10 +494,10 @@ async def run_scan_job(job_id, target, profile, username):
         scan_jobs[job_id]["progress"] = 95
         scan_jobs[job_id]["step"] = "Saving report"
 
-        save_scan_result(target, result, username)
+        save_scan_result(target, result, user_id)
 
-        if result["risk"] == "HIGH":
-            send_discord_alert(target, result["risk"], result["score"])
+        if result.get("risk") == "HIGH":
+            send_discord_alert(target, result.get("risk"), result.get("score"))
 
         scan_jobs[job_id]["status"] = "completed"
         scan_jobs[job_id]["progress"] = 100
@@ -516,6 +527,9 @@ def scan_status(
     if not job:
         raise HTTPException(status_code=404, detail="Scan job not found")
 
+    if job.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
     if job["status"] == "queued":
         job["queue_position"] = get_queue_position(job_id)
 
@@ -534,11 +548,16 @@ def queue_status(
 ):
     queue_size = scan_queue.qsize() if scan_queue else 0
 
-    running_jobs = [job for job in scan_jobs.values() if job.get("status") == "running"]
-    queued_jobs = [job for job in scan_jobs.values() if job.get("status") == "queued"]
-    completed_jobs = [job for job in scan_jobs.values() if job.get("status") == "completed"]
-    failed_jobs = [job for job in scan_jobs.values() if job.get("status") == "failed"]
-    cancelled_jobs = [job for job in scan_jobs.values() if job.get("status") == "cancelled"]
+    user_jobs = [
+        job for job in scan_jobs.values()
+        if job.get("user_id") == user["id"]
+    ]
+
+    running_jobs = [job for job in user_jobs if job.get("status") == "running"]
+    queued_jobs = [job for job in user_jobs if job.get("status") == "queued"]
+    completed_jobs = [job for job in user_jobs if job.get("status") == "completed"]
+    failed_jobs = [job for job in user_jobs if job.get("status") == "failed"]
+    cancelled_jobs = [job for job in user_jobs if job.get("status") == "cancelled"]
 
     return {
         "queue_size": queue_size,
@@ -561,14 +580,19 @@ def history(
     c = conn.cursor()
 
     c.execute(
-        "SELECT id, target, risk, score, created_at FROM scans WHERE user=? ORDER BY id DESC",
-        (user["username"],)
+        """
+        SELECT id, target, risk, score, created_at
+        FROM scans
+        WHERE user_id=?
+        ORDER BY id DESC
+        """,
+        (user["id"],)
     )
 
-    data = c.fetchall()
+    rows = c.fetchall()
     conn.close()
 
-    return {"data": data}
+    return {"data": [dict(row) for row in rows]}
 
 
 @app.get("/history/{scan_id}")
@@ -583,8 +607,12 @@ def scan_details(
     c = conn.cursor()
 
     c.execute(
-        "SELECT report FROM scans WHERE id=? AND user=?",
-        (scan_id, user["username"])
+        """
+        SELECT report
+        FROM scans
+        WHERE id=? AND user_id=?
+        """,
+        (scan_id, user["id"])
     )
 
     row = c.fetchone()
@@ -593,4 +621,4 @@ def scan_details(
     if not row:
         raise HTTPException(status_code=404, detail="Scan not found")
 
-    return json.loads(row[0])
+    return json.loads(row["report"])
