@@ -5,28 +5,14 @@ import httpx
 import dns.resolver
 from urllib.parse import urlparse
 
-COMMON_PORTS = [
-    21, 22, 25, 53, 80, 110, 143, 443,
-    8080, 8443
-]
-
+COMMON_PORTS = [21, 22, 25, 53, 80, 110, 143, 443, 8080, 8443]
 RISKY_PORTS = [21, 22, 25, 3306, 5432, 6379, 27017]
 
 PORT_SERVICES = {
-    21: "FTP",
-    22: "SSH",
-    25: "SMTP",
-    53: "DNS",
-    80: "HTTP",
-    110: "POP3",
-    143: "IMAP",
-    443: "HTTPS",
-    3306: "MySQL",
-    5432: "PostgreSQL",
-    6379: "Redis",
-    8080: "HTTP-Alt",
-    8443: "HTTPS-Alt",
-    27017: "MongoDB"
+    21: "FTP", 22: "SSH", 25: "SMTP", 53: "DNS",
+    80: "HTTP", 110: "POP3", 143: "IMAP", 443: "HTTPS",
+    3306: "MySQL", 5432: "PostgreSQL", 6379: "Redis",
+    8080: "HTTP-Alt", 8443: "HTTPS-Alt", 27017: "MongoDB"
 }
 
 COMMON_SUBDOMAINS = [
@@ -53,113 +39,38 @@ SENSITIVE_ROBOTS_KEYWORDS = [
 ]
 
 NIKTO_PATHS = [
-    {
-        "path": "/phpmyadmin/",
-        "name": "phpMyAdmin Exposed",
-        "severity": "HIGH",
-        "keywords": ["phpmyadmin", "pma_username"],
-        "fix": "Restrict phpMyAdmin access by IP, VPN, or remove it from public internet."
-    },
-    {
-        "path": "/wp-login.php",
-        "name": "WordPress Login Exposed",
-        "severity": "MEDIUM",
-        "keywords": ["wordpress", "wp-submit", "wp-login"],
-        "fix": "Protect WordPress login with rate limiting, MFA, and WAF rules."
-    },
-    {
-        "path": "/wp-admin/",
-        "name": "WordPress Admin Exposed",
-        "severity": "MEDIUM",
-        "keywords": ["wordpress", "wp-admin", "login"],
-        "fix": "Restrict admin access and enable strong authentication."
-    },
-    {
-        "path": "/server-status",
-        "name": "Apache Server Status Exposed",
-        "severity": "HIGH",
-        "keywords": ["apache server status", "server uptime", "total accesses"],
-        "fix": "Disable server-status or restrict it to localhost/admin IPs."
-    },
-    {
-        "path": "/.env",
-        "name": ".env File Exposed",
-        "severity": "HIGH",
-        "keywords": ["app_key", "db_password", "secret", "password", "database_url"],
-        "fix": "Remove .env from public web root immediately."
-    },
-    {
-        "path": "/.git/config",
-        "name": "Git Config Exposed",
-        "severity": "HIGH",
-        "keywords": ["[core]", "repositoryformatversion"],
-        "fix": "Block access to .git directory and remove it from public web root."
-    },
-    {
-        "path": "/backup.zip",
-        "name": "Backup File Exposed",
-        "severity": "HIGH",
-        "keywords": [],
-        "fix": "Remove public backup files from the server."
-    },
-    {
-        "path": "/backup.sql",
-        "name": "Database Backup Exposed",
-        "severity": "HIGH",
-        "keywords": [],
-        "fix": "Remove public database backups from the server."
-    },
-    {
-        "path": "/database.sql",
-        "name": "Database Dump Exposed",
-        "severity": "HIGH",
-        "keywords": [],
-        "fix": "Remove public SQL dumps from the server."
-    },
-    {
-        "path": "/debug",
-        "name": "Debug Page Exposed",
-        "severity": "MEDIUM",
-        "keywords": ["debug", "traceback", "exception", "stack trace"],
-        "fix": "Disable debug mode in production."
-    },
-    {
-        "path": "/phpinfo.php",
-        "name": "PHP Info Page Exposed",
-        "severity": "HIGH",
-        "keywords": ["php version", "phpinfo"],
-        "fix": "Remove phpinfo.php from production."
-    },
-    {
-        "path": "/config.php",
-        "name": "Config File Exposed",
-        "severity": "HIGH",
-        "keywords": ["db_password", "database", "password", "secret"],
-        "fix": "Move configuration files outside the web root."
-    },
-    {
-        "path": "/admin/",
-        "name": "Admin Panel Exposed",
-        "severity": "MEDIUM",
-        "keywords": ["admin", "login", "password"],
-        "fix": "Protect admin panels with authentication, MFA, and IP restrictions."
-    }
+    {"path": "/phpmyadmin/", "name": "phpMyAdmin Exposed", "severity": "HIGH", "keywords": ["phpmyadmin", "pma_username"], "fix": "Restrict phpMyAdmin access by IP, VPN, or remove it from public internet."},
+    {"path": "/wp-login.php", "name": "WordPress Login Exposed", "severity": "MEDIUM", "keywords": ["wordpress", "wp-submit", "wp-login"], "fix": "Protect WordPress login with rate limiting, MFA, and WAF rules."},
+    {"path": "/wp-admin/", "name": "WordPress Admin Exposed", "severity": "MEDIUM", "keywords": ["wordpress", "wp-admin", "login"], "fix": "Restrict admin access and enable strong authentication."},
+    {"path": "/server-status", "name": "Apache Server Status Exposed", "severity": "HIGH", "keywords": ["apache server status", "server uptime", "total accesses"], "fix": "Disable server-status or restrict it to localhost/admin IPs."},
+    {"path": "/.env", "name": ".env File Exposed", "severity": "HIGH", "keywords": ["app_key", "db_password", "secret", "password", "database_url"], "fix": "Remove .env from public web root immediately."},
+    {"path": "/.git/config", "name": "Git Config Exposed", "severity": "HIGH", "keywords": ["[core]", "repositoryformatversion"], "fix": "Block access to .git directory and remove it from public web root."},
+    {"path": "/backup.zip", "name": "Backup File Exposed", "severity": "HIGH", "keywords": [], "fix": "Remove public backup files from the server."},
+    {"path": "/backup.sql", "name": "Database Backup Exposed", "severity": "HIGH", "keywords": [], "fix": "Remove public database backups from the server."},
+    {"path": "/database.sql", "name": "Database Dump Exposed", "severity": "HIGH", "keywords": [], "fix": "Remove public SQL dumps from the server."},
+    {"path": "/debug", "name": "Debug Page Exposed", "severity": "MEDIUM", "keywords": ["debug", "traceback", "exception", "stack trace"], "fix": "Disable debug mode in production."},
+    {"path": "/phpinfo.php", "name": "PHP Info Page Exposed", "severity": "HIGH", "keywords": ["php version", "phpinfo"], "fix": "Remove phpinfo.php from production."},
+    {"path": "/config.php", "name": "Config File Exposed", "severity": "HIGH", "keywords": ["db_password", "database", "password", "secret"], "fix": "Move configuration files outside the web root."},
+    {"path": "/admin/", "name": "Admin Panel Exposed", "severity": "MEDIUM", "keywords": ["admin", "login", "password"], "fix": "Protect admin panels with authentication, MFA, and IP restrictions."}
 ]
 
 
-def add_finding(findings, title, severity, description, fix):
+def add_finding(findings, title, severity, description, fix, category="General", evidence=None):
     findings.append({
         "title": title,
         "severity": severity,
+        "category": category,
         "description": description,
+        "evidence": evidence,
         "fix": fix
     })
 
 
-def add_vuln(vulns, name, severity, evidence, impact, fix):
+def add_vuln(vulns, name, severity, evidence, impact, fix, category="General"):
     vulns.append({
         "name": name,
         "severity": severity,
+        "category": category,
         "evidence": evidence,
         "impact": impact,
         "fix": fix
@@ -167,6 +78,7 @@ def add_vuln(vulns, name, severity, evidence, impact, fix):
 
 
 def normalize_target(target):
+    target = target.strip()
     if not target.startswith("http://") and not target.startswith("https://"):
         return "https://" + target
     return target
@@ -176,17 +88,50 @@ def get_hostname(target):
     return urlparse(normalize_target(target)).hostname
 
 
+def severity_points(severity):
+    return {
+        "CRITICAL": 25,
+        "HIGH": 20,
+        "MEDIUM": 10,
+        "LOW": 5,
+        "INFO": 0,
+        "UNKNOWN": 3
+    }.get(str(severity).upper(), 3)
+
+
+def dedupe_list(items):
+    seen = set()
+    output = []
+    for item in items:
+        key = str(item)
+        if key not in seen:
+            seen.add(key)
+            output.append(item)
+    return output
+
+
+def dedupe_dicts(items, key_fields):
+    seen = set()
+    output = []
+    for item in items:
+        key = tuple(item.get(k) for k in key_fields)
+        if key not in seen:
+            seen.add(key)
+            output.append(item)
+    return output
+
+
 async def safe_get(client, url):
     try:
         return await client.get(url)
-    except:
+    except Exception:
         return None
 
 
 async def safe_options(client, url):
     try:
         return await client.options(url)
-    except:
+    except Exception:
         return None
 
 
@@ -196,12 +141,11 @@ async def check_port(host, port):
         reader, writer = await asyncio.wait_for(conn, timeout=1.5)
 
         banner = None
-
         try:
             data = await asyncio.wait_for(reader.read(128), timeout=1)
             if data:
                 banner = data.decode(errors="ignore").strip()
-        except:
+        except Exception:
             banner = None
 
         writer.close()
@@ -214,7 +158,7 @@ async def check_port(host, port):
             "risk": "RISKY" if port in RISKY_PORTS else "NORMAL"
         }
 
-    except:
+    except Exception:
         return None
 
 
@@ -222,7 +166,6 @@ async def check_ssl(host):
     def ssl_job():
         try:
             context = ssl.create_default_context()
-
             with socket.create_connection((host, 443), timeout=3) as sock:
                 with context.wrap_socket(sock, server_hostname=host) as ssock:
                     cert = ssock.getpeercert()
@@ -272,17 +215,17 @@ async def check_dns_security(host):
         try:
             try:
                 result["a_records"] = [r.to_text() for r in dns.resolver.resolve(host, "A")]
-            except:
+            except Exception:
                 result["issues"].append("No A record found")
 
             try:
                 result["mx_records"] = [r.to_text() for r in dns.resolver.resolve(host, "MX")]
-            except:
+            except Exception:
                 result["issues"].append("No MX record found")
 
             try:
                 result["ns_records"] = [r.to_text() for r in dns.resolver.resolve(host, "NS")]
-            except:
+            except Exception:
                 result["issues"].append("No NS record found")
 
             try:
@@ -295,7 +238,7 @@ async def check_dns_security(host):
 
                 if not result["spf"]:
                     result["issues"].append("SPF record not found")
-            except:
+            except Exception:
                 result["issues"].append("No TXT record found")
 
             try:
@@ -308,12 +251,13 @@ async def check_dns_security(host):
 
                 if not result["dmarc"]:
                     result["issues"].append("DMARC record not found")
-            except:
+            except Exception:
                 result["issues"].append("DMARC record not found")
 
         except Exception as e:
             result["issues"].append(str(e))
 
+        result["issues"] = dedupe_list(result["issues"])
         return result
 
     return await asyncio.to_thread(dns_job)
@@ -323,7 +267,7 @@ async def resolve_subdomain(subdomain):
     def dns_job():
         try:
             return [r.to_text() for r in dns.resolver.resolve(subdomain, "A")]
-        except:
+        except Exception:
             return []
 
     return await asyncio.to_thread(dns_job)
@@ -340,7 +284,6 @@ async def check_subdomain_http(client, subdomain):
     }
 
     ips = await resolve_subdomain(subdomain)
-
     if not ips:
         return None
 
@@ -372,7 +315,6 @@ async def check_subdomains(client, host):
     ]
 
     results = await asyncio.gather(*tasks)
-
     for item in results:
         if item:
             found.append(item)
@@ -516,10 +458,7 @@ async def check_nikto_paths(client, base_url):
 
         if res.status_code == 200:
             if item["keywords"]:
-                for keyword in item["keywords"]:
-                    if keyword.lower() in text:
-                        detected = True
-                        break
+                detected = any(keyword.lower() in text for keyword in item["keywords"])
             else:
                 detected = True
 
@@ -546,7 +485,6 @@ async def check_robots_txt(client, base_url):
     }
 
     res = await safe_get(client, result["url"])
-
     if not res or res.status_code != 200:
         return result
 
@@ -559,6 +497,8 @@ async def check_robots_txt(client, base_url):
             for keyword in SENSITIVE_ROBOTS_KEYWORDS:
                 if keyword in line_clean:
                     result["suspicious_entries"].append(line_clean)
+
+    result["suspicious_entries"] = dedupe_list(result["suspicious_entries"])
 
     if result["suspicious_entries"]:
         result["summary"] = "robots.txt contains potentially sensitive disallow entries"
@@ -596,6 +536,7 @@ async def check_security_txt(client, base_url):
             if clean.lower().startswith("policy:"):
                 result["policy"] = clean
 
+        result["contacts"] = dedupe_list(result["contacts"])
         result["summary"] = "security.txt found"
         return result
 
@@ -639,12 +580,10 @@ async def fetch_cves_for_keyword(client, keyword):
                 cvss = metrics["cvssMetricV31"][0]["cvssData"]
                 severity = cvss.get("baseSeverity", "UNKNOWN")
                 cvss_score = cvss.get("baseScore")
-
             elif "cvssMetricV30" in metrics:
                 cvss = metrics["cvssMetricV30"][0]["cvssData"]
                 severity = cvss.get("baseSeverity", "UNKNOWN")
                 cvss_score = cvss.get("baseScore")
-
             elif "cvssMetricV2" in metrics:
                 cvss = metrics["cvssMetricV2"][0]["cvssData"]
                 severity = metrics["cvssMetricV2"][0].get("baseSeverity", "UNKNOWN")
@@ -659,7 +598,7 @@ async def fetch_cves_for_keyword(client, keyword):
                 "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}"
             })
 
-    except:
+    except Exception:
         return cves
 
     return cves
@@ -710,6 +649,72 @@ async def check_cves(client, technologies):
     return results
 
 
+def build_structured_storage(findings, vulnerability_checks, subdomains, cve_results, open_ports):
+    scan_findings = []
+    scan_cves = []
+    scan_subdomains = []
+    scan_ports = []
+
+    for item in findings:
+        scan_findings.append({
+            "title": item.get("title"),
+            "severity": item.get("severity"),
+            "category": item.get("category", "General"),
+            "description": item.get("description"),
+            "evidence": item.get("evidence"),
+            "fix": item.get("fix")
+        })
+
+    for item in vulnerability_checks:
+        if not any(f["title"] == item.get("name") for f in scan_findings):
+            scan_findings.append({
+                "title": item.get("name"),
+                "severity": item.get("severity"),
+                "category": item.get("category", "General"),
+                "description": item.get("impact"),
+                "evidence": item.get("evidence"),
+                "fix": item.get("fix")
+            })
+
+    for sub in subdomains:
+        scan_subdomains.append({
+            "subdomain": sub.get("subdomain"),
+            "ips": sub.get("ips", []),
+            "http": sub.get("http", False),
+            "https": sub.get("https", False),
+            "status_code": sub.get("status_code"),
+            "final_url": sub.get("final_url")
+        })
+
+    for port in open_ports:
+        scan_ports.append({
+            "port": port.get("port"),
+            "service": port.get("service"),
+            "banner": port.get("banner"),
+            "risk": port.get("risk")
+        })
+
+    for tech_item in cve_results:
+        technology = tech_item.get("technology")
+        for cve in tech_item.get("cves", []):
+            scan_cves.append({
+                "technology": technology,
+                "cve_id": cve.get("id"),
+                "severity": cve.get("severity"),
+                "score": cve.get("score"),
+                "published": cve.get("published"),
+                "description": cve.get("description"),
+                "url": cve.get("url")
+            })
+
+    return {
+        "scan_findings": dedupe_dicts(scan_findings, ["title", "severity", "evidence"]),
+        "scan_subdomains": dedupe_dicts(scan_subdomains, ["subdomain"]),
+        "scan_ports": dedupe_dicts(scan_ports, ["port"]),
+        "scan_cves": dedupe_dicts(scan_cves, ["technology", "cve_id"])
+    }
+
+
 async def analyze(target, profile="full"):
     profile = profile.lower()
 
@@ -733,27 +738,48 @@ async def analyze(target, profile="full"):
 
     if not host:
         return {
+            "target": target,
+            "host": None,
+            "ip": None,
+            "profile": profile,
             "risk": "HIGH",
             "score": 100,
-            "profile": profile,
             "alerts": ["Invalid target"],
             "vulnerabilities": ["Invalid target format"],
             "vulnerability_checks": [],
-            "findings": []
+            "findings": [],
+            "structured": {
+                "scan_findings": [],
+                "scan_subdomains": [],
+                "scan_ports": [],
+                "scan_cves": []
+            },
+            "scan_summary": {
+                "total_findings": 0,
+                "critical": 0,
+                "high": 0,
+                "medium": 0,
+                "low": 0,
+                "info": 0
+            }
         }
 
     try:
         ip = socket.gethostbyname(host)
-    except:
+    except Exception:
         return {
+            "target": target,
+            "host": host,
+            "ip": None,
+            "profile": profile,
             "risk": "HIGH",
             "score": 90,
-            "profile": profile,
             "alerts": ["DNS resolution failed"],
             "vulnerabilities": ["Domain does not resolve"],
             "vulnerability_checks": [{
                 "name": "DNS Resolution Failed",
                 "severity": "HIGH",
+                "category": "DNS",
                 "evidence": host,
                 "impact": "The domain cannot be reached.",
                 "fix": "Check DNS configuration and domain validity."
@@ -761,15 +787,38 @@ async def analyze(target, profile="full"):
             "findings": [{
                 "title": "DNS Resolution Failed",
                 "severity": "HIGH",
+                "category": "DNS",
                 "description": "The domain could not be resolved to an IP address.",
+                "evidence": host,
                 "fix": "Check that the domain is valid and DNS records are configured correctly."
-            }]
+            }],
+            "structured": {
+                "scan_findings": [{
+                    "title": "DNS Resolution Failed",
+                    "severity": "HIGH",
+                    "category": "DNS",
+                    "description": "The domain could not be resolved to an IP address.",
+                    "evidence": host,
+                    "fix": "Check that the domain is valid and DNS records are configured correctly."
+                }],
+                "scan_subdomains": [],
+                "scan_ports": [],
+                "scan_cves": []
+            },
+            "scan_summary": {
+                "total_findings": 1,
+                "critical": 0,
+                "high": 1,
+                "medium": 0,
+                "low": 0,
+                "info": 0
+            }
         }
 
     async with httpx.AsyncClient(
         timeout=5,
         follow_redirects=True,
-        headers={"User-Agent": "ThreatScanner-Profile/2.5"}
+        headers={"User-Agent": "ThreatScanner-Profile/3.0"}
     ) as client:
 
         response_task = safe_get(client, url)
@@ -778,21 +827,12 @@ async def analyze(target, profile="full"):
         dns_task = check_dns_security(host)
         robots_task = check_robots_txt(client, url)
         security_txt_task = check_security_txt(client, url)
-        subdomains_task = (
-            check_subdomains(client, host)
-            if enable_subdomains
-            else asyncio.sleep(0, result=[])
-        )
-
-        nikto_task = (
-            check_nikto_paths(client, url)
-            if enable_nikto
-            else asyncio.sleep(0, result=[])
-        )
+        subdomains_task = check_subdomains(client, host) if enable_subdomains else asyncio.sleep(0, result=[])
+        nikto_task = check_nikto_paths(client, url) if enable_nikto else asyncio.sleep(0, result=[])
 
         ports_task = asyncio.gather(*[
             check_port(host, port)
-            for port in COMMON_PORTS + RISKY_PORTS
+            for port in list(set(COMMON_PORTS + RISKY_PORTS))
         ])
 
         sensitive_task = asyncio.gather(*[
@@ -834,81 +874,32 @@ async def analyze(target, profile="full"):
         waf = detect_waf(response)
         cors_issues = check_cors(response)
         http_methods = check_http_methods(options_response)
-        cve_results = (
-            await check_cves(client, technologies)
-            if enable_cve
-            else []
-        )
+        cve_results = await check_cves(client, technologies) if enable_cve else []
 
     if not response:
         score += 25
         alerts.append("Website is not reachable")
         vulnerabilities.append("Website is not reachable")
 
-        add_vuln(
-            vulnerability_checks,
-            "Website Not Reachable",
-            "MEDIUM",
-            url,
-            "Scanner could not connect to the website.",
-            "Check server, DNS, firewall, and hosting status."
-        )
-
-        add_finding(
-            findings,
-            "Website Not Reachable",
-            "MEDIUM",
-            "The scanner could not connect to the website.",
-            "Check server availability, firewall rules, DNS, and hosting status."
-        )
+        add_vuln(vulnerability_checks, "Website Not Reachable", "MEDIUM", url, "Scanner could not connect to the website.", "Check server, DNS, firewall, and hosting status.", "Availability")
+        add_finding(findings, "Website Not Reachable", "MEDIUM", "The scanner could not connect to the website.", "Check server availability, firewall rules, DNS, and hosting status.", "Availability", url)
 
     else:
         if response.url.scheme == "http":
             score += 25
             vulnerabilities.append("Website uses HTTP instead of HTTPS")
-
-            add_vuln(
-                vulnerability_checks,
-                "HTTP Without HTTPS",
-                "MEDIUM",
-                str(response.url),
-                "Traffic may be intercepted or modified.",
-                "Force HTTPS redirection and enable HSTS."
-            )
-
-            add_finding(
-                findings,
-                "HTTP Used Instead of HTTPS",
-                "MEDIUM",
-                "The website is accessible over insecure HTTP.",
-                "Redirect all HTTP traffic to HTTPS and enable a valid SSL certificate."
-            )
+            add_vuln(vulnerability_checks, "HTTP Without HTTPS", "MEDIUM", str(response.url), "Traffic may be intercepted or modified.", "Force HTTPS redirection and enable HSTS.", "SSL/TLS")
+            add_finding(findings, "HTTP Used Instead of HTTPS", "MEDIUM", "The website is accessible over insecure HTTP.", "Redirect all HTTP traffic to HTTPS and enable a valid SSL certificate.", "SSL/TLS", str(response.url))
 
         if response.status_code >= 500:
             score += 20
             alerts.append(f"Server error detected: {response.status_code}")
-
-            add_vuln(
-                vulnerability_checks,
-                "Server Error",
-                "MEDIUM",
-                f"HTTP {response.status_code}",
-                "Server-side errors may reveal instability or misconfiguration.",
-                "Review backend logs and server configuration."
-            )
+            add_vuln(vulnerability_checks, "Server Error", "MEDIUM", f"HTTP {response.status_code}", "Server-side errors may reveal instability or misconfiguration.", "Review backend logs and server configuration.", "HTTP")
 
         elif response.status_code >= 400:
             score += 10
             alerts.append(f"Client error detected: {response.status_code}")
-
-            add_vuln(
-                vulnerability_checks,
-                "Client Error",
-                "LOW",
-                f"HTTP {response.status_code}",
-                "The requested page returns an error.",
-                "Review URL routing and access controls."
-            )
+            add_vuln(vulnerability_checks, "Client Error", "LOW", f"HTTP {response.status_code}", "The requested page returns an error.", "Review URL routing and access controls.", "HTTP")
 
         for header, info in SECURITY_HEADERS.items():
             if header in response.headers:
@@ -917,25 +908,8 @@ async def analyze(target, profile="full"):
                 missing_headers.append(header)
                 score += 6
                 vulnerabilities.append(f"Missing security header: {header}")
-
-                severity = info["severity"]
-
-                add_vuln(
-                    vulnerability_checks,
-                    f"Missing Security Header: {header}",
-                    severity,
-                    f"{header} not present",
-                    "Missing browser security controls may increase attack surface.",
-                    info["fix"]
-                )
-
-                add_finding(
-                    findings,
-                    f"Missing Security Header: {header}",
-                    severity,
-                    f"The response does not include the {header} security header.",
-                    info["fix"]
-                )
+                add_vuln(vulnerability_checks, f"Missing Security Header: {header}", info["severity"], f"{header} not present", "Missing browser security controls may increase attack surface.", info["fix"], "Headers")
+                add_finding(findings, f"Missing Security Header: {header}", info["severity"], f"The response does not include the {header} security header.", info["fix"], "Headers", f"{header} not present")
 
         server = response.headers.get("Server")
         powered = response.headers.get("X-Powered-By")
@@ -943,44 +917,14 @@ async def analyze(target, profile="full"):
         if server:
             score += 5
             vulnerabilities.append(f"Server header exposed: {server}")
-
-            add_vuln(
-                vulnerability_checks,
-                "Server Header Disclosure",
-                "LOW",
-                f"Server: {server}",
-                "Attackers may identify server technology.",
-                "Hide or reduce server version information."
-            )
-
-            add_finding(
-                findings,
-                "Server Header Exposed",
-                "LOW",
-                f"The server reveals technology information: {server}.",
-                "Hide or minimize server version headers to reduce information disclosure."
-            )
+            add_vuln(vulnerability_checks, "Server Header Disclosure", "LOW", f"Server: {server}", "Attackers may identify server technology.", "Hide or reduce server version information.", "Headers")
+            add_finding(findings, "Server Header Exposed", "LOW", f"The server reveals technology information: {server}.", "Hide or minimize server version headers to reduce information disclosure.", "Headers", f"Server: {server}")
 
         if powered:
             score += 5
             vulnerabilities.append(f"Technology header exposed: {powered}")
-
-            add_vuln(
-                vulnerability_checks,
-                "Technology Disclosure",
-                "LOW",
-                f"X-Powered-By: {powered}",
-                "Application technology is exposed.",
-                "Remove X-Powered-By header."
-            )
-
-            add_finding(
-                findings,
-                "Technology Header Exposed",
-                "LOW",
-                f"The application reveals technology information: {powered}.",
-                "Remove X-Powered-By headers from the web server or framework."
-            )
+            add_vuln(vulnerability_checks, "Technology Disclosure", "LOW", f"X-Powered-By: {powered}", "Application technology is exposed.", "Remove X-Powered-By header.", "Headers")
+            add_finding(findings, "Technology Header Exposed", "LOW", f"The application reveals technology information: {powered}.", "Remove X-Powered-By headers from the web server or framework.", "Headers", f"X-Powered-By: {powered}")
 
         cookies = response.headers.get("Set-Cookie", "")
 
@@ -988,67 +932,25 @@ async def analyze(target, profile="full"):
             if "HttpOnly" not in cookies:
                 score += 8
                 vulnerabilities.append("Cookie missing HttpOnly flag")
-
-                add_vuln(
-                    vulnerability_checks,
-                    "Cookie Missing HttpOnly",
-                    "MEDIUM",
-                    cookies,
-                    "JavaScript may access sensitive cookies.",
-                    "Set HttpOnly flag on sensitive cookies."
-                )
+                add_vuln(vulnerability_checks, "Cookie Missing HttpOnly", "MEDIUM", cookies, "JavaScript may access sensitive cookies.", "Set HttpOnly flag on sensitive cookies.", "Cookies")
 
             if "Secure" not in cookies:
                 score += 8
                 vulnerabilities.append("Cookie missing Secure flag")
-
-                add_vuln(
-                    vulnerability_checks,
-                    "Cookie Missing Secure",
-                    "MEDIUM",
-                    cookies,
-                    "Cookies may be sent over insecure connections.",
-                    "Set Secure flag on cookies."
-                )
+                add_vuln(vulnerability_checks, "Cookie Missing Secure", "MEDIUM", cookies, "Cookies may be sent over insecure connections.", "Set Secure flag on cookies.", "Cookies")
 
             if "SameSite" not in cookies:
                 score += 6
                 vulnerabilities.append("Cookie missing SameSite flag")
-
-                add_vuln(
-                    vulnerability_checks,
-                    "Cookie Missing SameSite",
-                    "LOW",
-                    cookies,
-                    "May increase CSRF risk.",
-                    "Set SameSite=Lax or SameSite=Strict."
-                )
+                add_vuln(vulnerability_checks, "Cookie Missing SameSite", "LOW", cookies, "May increase CSRF risk.", "Set SameSite=Lax or SameSite=Strict.", "Cookies")
 
         for issue in cors_issues:
             score += 12
             vulnerabilities.append(issue)
+            add_vuln(vulnerability_checks, "CORS Misconfiguration", "MEDIUM", issue, "Overly permissive CORS may allow untrusted origins.", "Restrict CORS to trusted domains only.", "CORS")
+            add_finding(findings, "CORS Misconfiguration", "MEDIUM", issue, "Restrict Access-Control-Allow-Origin to trusted domains only.", "CORS", issue)
 
-            add_vuln(
-                vulnerability_checks,
-                "CORS Misconfiguration",
-                "MEDIUM",
-                issue,
-                "Overly permissive CORS may allow untrusted origins.",
-                "Restrict CORS to trusted domains only."
-            )
-
-            add_finding(
-                findings,
-                "CORS Misconfiguration",
-                "MEDIUM",
-                issue,
-                "Restrict Access-Control-Allow-Origin to trusted domains only."
-            )
-
-        dangerous_methods = [
-            m for m in http_methods
-            if m.upper() in ["PUT", "DELETE", "TRACE", "CONNECT"]
-        ]
+        dangerous_methods = [m for m in http_methods if m.upper() in ["PUT", "DELETE", "TRACE", "CONNECT"]]
 
         if dangerous_methods:
             score += len(dangerous_methods) * 10
@@ -1056,229 +958,71 @@ async def analyze(target, profile="full"):
             vulnerabilities.append(f"Potentially dangerous HTTP methods enabled: {methods_text}")
 
             for method in dangerous_methods:
-                add_vuln(
-                    vulnerability_checks,
-                    "Dangerous HTTP Method Enabled",
-                    "MEDIUM",
-                    method,
-                    "Unsafe HTTP methods may allow unintended actions.",
-                    "Disable unused HTTP methods such as PUT, DELETE, TRACE, CONNECT."
-                )
+                add_vuln(vulnerability_checks, "Dangerous HTTP Method Enabled", "MEDIUM", method, "Unsafe HTTP methods may allow unintended actions.", "Disable unused HTTP methods such as PUT, DELETE, TRACE, CONNECT.", "HTTP Methods")
 
-            add_finding(
-                findings,
-                "Dangerous HTTP Methods",
-                "MEDIUM",
-                "Some HTTP methods may allow unsafe operations if not protected.",
-                "Disable unused HTTP methods at the web server or application layer."
-            )
+            add_finding(findings, "Dangerous HTTP Methods", "MEDIUM", "Some HTTP methods may allow unsafe operations if not protected.", "Disable unused HTTP methods at the web server or application layer.", "HTTP Methods", methods_text)
 
         page_text = response.text.lower()
 
         if "index of /" in page_text or "directory listing" in page_text:
             score += 30
             vulnerabilities.append("Directory listing appears to be enabled")
-
-            add_vuln(
-                vulnerability_checks,
-                "Directory Listing Enabled",
-                "HIGH",
-                "Page contains directory listing indicators.",
-                "Files and folders may be publicly exposed.",
-                "Disable directory listing on the web server."
-            )
-
-            add_finding(
-                findings,
-                "Directory Listing Enabled",
-                "HIGH",
-                "The website appears to expose directory listings.",
-                "Disable directory listing in the web server configuration."
-            )
+            add_vuln(vulnerability_checks, "Directory Listing Enabled", "HIGH", "Page contains directory listing indicators.", "Files and folders may be publicly exposed.", "Disable directory listing on the web server.", "Exposure")
+            add_finding(findings, "Directory Listing Enabled", "HIGH", "The website appears to expose directory listings.", "Disable directory listing in the web server configuration.", "Exposure", "index of /")
 
     if not ssl_ok:
         score += 25
         vulnerabilities.append("SSL certificate problem or HTTPS unavailable")
-
-        add_vuln(
-            vulnerability_checks,
-            "SSL/TLS Problem",
-            "MEDIUM",
-            str(ssl_info),
-            "Users may be exposed to insecure or broken HTTPS.",
-            "Install a valid TLS certificate and ensure HTTPS is correctly configured."
-        )
-
-        add_finding(
-            findings,
-            "SSL Problem",
-            "MEDIUM",
-            "The website has an SSL/TLS issue or HTTPS is not available.",
-            "Install a valid TLS certificate and ensure HTTPS is correctly configured."
-        )
+        add_vuln(vulnerability_checks, "SSL/TLS Problem", "MEDIUM", str(ssl_info), "Users may be exposed to insecure or broken HTTPS.", "Install a valid TLS certificate and ensure HTTPS is correctly configured.", "SSL/TLS")
+        add_finding(findings, "SSL Problem", "MEDIUM", "The website has an SSL/TLS issue or HTTPS is not available.", "Install a valid TLS certificate and ensure HTTPS is correctly configured.", "SSL/TLS", str(ssl_info))
 
     for issue in dns_security["issues"]:
         if "SPF" in issue or "DMARC" in issue:
             score += 8
             vulnerabilities.append(issue)
-
-            add_vuln(
-                vulnerability_checks,
-                "DNS Email Security Issue",
-                "LOW",
-                issue,
-                "Missing email security records may increase spoofing risk.",
-                "Configure SPF and DMARC records."
-            )
-
-            add_finding(
-                findings,
-                "DNS Email Security Issue",
-                "LOW",
-                issue,
-                "Configure SPF and DMARC records to reduce email spoofing risk."
-            )
+            add_vuln(vulnerability_checks, "DNS Email Security Issue", "LOW", issue, "Missing email security records may increase spoofing risk.", "Configure SPF and DMARC records.", "DNS")
+            add_finding(findings, "DNS Email Security Issue", "LOW", issue, "Configure SPF and DMARC records to reduce email spoofing risk.", "DNS", issue)
 
     if robots_txt["suspicious_entries"]:
         score += 10
         vulnerabilities.append("robots.txt contains potentially sensitive entries")
-
-        add_vuln(
-            vulnerability_checks,
-            "Suspicious robots.txt Entries",
-            "LOW",
-            ", ".join(robots_txt["suspicious_entries"]),
-            "robots.txt may reveal sensitive paths.",
-            "Avoid exposing sensitive path names and protect routes with authentication."
-        )
-
-        add_finding(
-            findings,
-            "Suspicious robots.txt Entries",
-            "LOW",
-            "robots.txt contains paths that may reveal sensitive areas.",
-            "Avoid exposing sensitive path names in robots.txt and protect sensitive routes."
-        )
+        evidence = ", ".join(robots_txt["suspicious_entries"])
+        add_vuln(vulnerability_checks, "Suspicious robots.txt Entries", "LOW", evidence, "robots.txt may reveal sensitive paths.", "Avoid exposing sensitive path names and protect routes with authentication.", "Robots")
+        add_finding(findings, "Suspicious robots.txt Entries", "LOW", "robots.txt contains paths that may reveal sensitive areas.", "Avoid exposing sensitive path names in robots.txt and protect sensitive routes.", "Robots", evidence)
 
     if not security_txt["exists"]:
-        add_finding(
-            findings,
-            "security.txt Not Found",
-            "INFO",
-            "The website does not expose a security.txt file.",
-            "Add /.well-known/security.txt with a security contact and disclosure policy."
-        )
+        add_finding(findings, "security.txt Not Found", "INFO", "The website does not expose a security.txt file.", "Add /.well-known/security.txt with a security contact and disclosure policy.", "Security Policy")
 
     for path in exposed_paths:
         score += 20
         vulnerabilities.append(f"Sensitive path exposed: {path}")
-
-        add_vuln(
-            vulnerability_checks,
-            "Sensitive Path Exposed",
-            "HIGH",
-            path,
-            "Sensitive files or admin paths may be publicly accessible.",
-            "Remove exposed files or restrict access with authentication."
-        )
+        add_vuln(vulnerability_checks, "Sensitive Path Exposed", "HIGH", path, "Sensitive files or admin paths may be publicly accessible.", "Remove exposed files or restrict access with authentication.", "Exposure")
 
     for item in nikto_checks:
-        severity = item["severity"]
-
-        if severity == "HIGH":
-            score += 20
-        elif severity == "MEDIUM":
-            score += 10
-        elif severity == "LOW":
-            score += 5
-
+        score += severity_points(item["severity"])
         vulnerabilities.append(item["name"])
+        add_vuln(vulnerability_checks, item["name"], item["severity"], item["evidence"], f"Potential exposure detected at {item['path']}", item["fix"], "Nikto-like")
+        add_finding(findings, item["name"], item["severity"], item["evidence"], item["fix"], "Nikto-like", item.get("url"))
 
-        add_vuln(
-            vulnerability_checks,
-            item["name"],
-            item["severity"],
-            item["evidence"],
-            f"Potential exposure detected at {item['path']}",
-            item["fix"]
-        )
-
-        add_finding(
-            findings,
-            item["name"],
-            item["severity"],
-            item["evidence"],
-            item["fix"]
-        )
-
-    risky_open = [
-        p for p in open_ports
-        if p.get("port") in RISKY_PORTS
-    ]
+    risky_open = [p for p in open_ports if p.get("port") in RISKY_PORTS]
 
     if risky_open:
         score += len(risky_open) * 12
-        ports_text = ", ".join([
-            f"{p['port']} ({p['service']})"
-            for p in risky_open
-        ])
+        ports_text = ", ".join([f"{p['port']} ({p['service']})" for p in risky_open])
         vulnerabilities.append(f"Risky open ports detected: {ports_text}")
-
-        add_vuln(
-            vulnerability_checks,
-            "Risky Open Ports",
-            "MEDIUM",
-            ports_text,
-            "Potentially risky service ports are reachable from the internet.",
-            "Close unused ports or restrict them with firewall rules."
-        )
-
-        add_finding(
-            findings,
-            "Risky Open Ports",
-            "MEDIUM",
-            "Potentially risky service ports are reachable from the internet.",
-            "Close unused ports or restrict them with firewall rules and IP allowlists."
-        )
+        add_vuln(vulnerability_checks, "Risky Open Ports", "MEDIUM", ports_text, "Potentially risky service ports are reachable from the internet.", "Close unused ports or restrict them with firewall rules.", "Ports")
+        add_finding(findings, "Risky Open Ports", "MEDIUM", "Potentially risky service ports are reachable from the internet.", "Close unused ports or restrict them with firewall rules and IP allowlists.", "Ports", ports_text)
 
     if subdomains:
-        add_finding(
-            findings,
-            "Subdomains Discovered",
-            "INFO",
-            f"{len(subdomains)} common subdomains were discovered.",
-            "Review discovered subdomains and ensure unused environments are removed or protected."
-        )
+        add_finding(findings, "Subdomains Discovered", "INFO", f"{len(subdomains)} common subdomains were discovered.", "Review discovered subdomains and ensure unused environments are removed or protected.", "Subdomains")
 
     for item in cve_results:
         for cve in item.get("cves", []):
             severity = cve.get("severity", "UNKNOWN")
+            score += severity_points(severity)
 
-            if severity == "CRITICAL":
-                score += 20
-            elif severity == "HIGH":
-                score += 15
-            elif severity == "MEDIUM":
-                score += 8
-            elif severity == "LOW":
-                score += 3
-
-            add_vuln(
-                vulnerability_checks,
-                f"Possible CVE Match: {cve.get('id')}",
-                severity,
-                f"Technology: {item.get('technology')}",
-                cve.get("description", "No description"),
-                f"Review {cve.get('url')} and update or patch if applicable."
-            )
-
-            add_finding(
-                findings,
-                f"Possible CVE Match: {cve.get('id')}",
-                severity,
-                f"Technology: {item.get('technology')} | {cve.get('description')}",
-                f"Review: {cve.get('url')} and update/patch the affected technology if applicable."
-            )
+            add_vuln(vulnerability_checks, f"Possible CVE Match: {cve.get('id')}", severity, f"Technology: {item.get('technology')}", cve.get("description", "No description"), f"Review {cve.get('url')} and update or patch if applicable.", "CVE")
+            add_finding(findings, f"Possible CVE Match: {cve.get('id')}", severity, f"Technology: {item.get('technology')} | {cve.get('description')}", f"Review: {cve.get('url')} and update/patch the affected technology if applicable.", "CVE", cve.get("url"))
 
     score = min(score, 100)
 
@@ -1289,7 +1033,36 @@ async def analyze(target, profile="full"):
     else:
         risk = "LOW"
 
-    alerts.extend(vulnerabilities)
+    vulnerabilities = dedupe_list(vulnerabilities)
+    alerts = dedupe_list(alerts + vulnerabilities)
+    findings = dedupe_dicts(findings, ["title", "severity", "evidence"])
+    vulnerability_checks = dedupe_dicts(vulnerability_checks, ["name", "severity", "evidence"])
+
+    structured = build_structured_storage(
+        findings=findings,
+        vulnerability_checks=vulnerability_checks,
+        subdomains=subdomains,
+        cve_results=cve_results,
+        open_ports=open_ports
+    )
+
+    summary_counts = {
+        "critical": 0,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "info": 0
+    }
+
+    for item in structured["scan_findings"]:
+        sev = str(item.get("severity", "INFO")).lower()
+        if sev in summary_counts:
+            summary_counts[sev] += 1
+
+    scan_summary = {
+        "total_findings": len(structured["scan_findings"]),
+        **summary_counts
+    }
 
     return {
         "target": target,
@@ -1327,5 +1100,7 @@ async def analyze(target, profile="full"):
         "vulnerabilities": vulnerabilities,
         "vulnerability_checks": vulnerability_checks,
         "findings": findings,
-        "alerts": alerts
+        "alerts": alerts,
+        "structured": structured,
+        "scan_summary": scan_summary
     }
