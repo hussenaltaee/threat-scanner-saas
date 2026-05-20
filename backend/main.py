@@ -24,7 +24,8 @@ from db import (
     init_db,
     create_user,
     verify_user,
-    save_scan
+    save_scan,
+    get_scan_details
 )
 
 from analyzer import analyze
@@ -308,7 +309,8 @@ async def scan(
     result = await analyze(data.target, data.profile)
     result["profile"] = data.profile
 
-    save_scan_result(data.target, result, user["id"])
+    scan_id = save_scan_result(data.target, result, user["id"])
+    result["scan_id"] = scan_id
 
     if result.get("risk") == "HIGH":
         send_discord_alert(data.target, result.get("risk"), result.get("score"))
@@ -494,7 +496,8 @@ async def run_scan_job(job_id, target, profile, user_id):
         scan_jobs[job_id]["progress"] = 95
         scan_jobs[job_id]["step"] = "Saving report"
 
-        save_scan_result(target, result, user_id)
+        scan_id = save_scan_result(target, result, user_id)
+        result["scan_id"] = scan_id
 
         if result.get("risk") == "HIGH":
             send_discord_alert(target, result.get("risk"), result.get("score"))
@@ -603,22 +606,9 @@ def scan_details(
     auth=Depends(security),
     user=Depends(get_current_user)
 ):
-    conn = get_connection()
-    c = conn.cursor()
+    report = get_scan_details(scan_id, user["id"])
 
-    c.execute(
-        """
-        SELECT report
-        FROM scans
-        WHERE id=? AND user_id=?
-        """,
-        (scan_id, user["id"])
-    )
-
-    row = c.fetchone()
-    conn.close()
-
-    if not row:
+    if not report:
         raise HTTPException(status_code=404, detail="Scan not found")
 
-    return json.loads(row["report"])
+    return report
