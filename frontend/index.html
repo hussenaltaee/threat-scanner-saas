@@ -22,6 +22,7 @@ button{background:#38bdf8;cursor:pointer;font-weight:bold}
 .finding{background:#334155;padding:12px;margin:10px 0;border-radius:8px}
 .cve,.nikto{background:#111827;padding:14px;margin:10px 0;border-radius:8px;border-left:4px solid #38bdf8}
 a{color:#38bdf8;text-decoration:none}
+.screenshot-img{max-width:100%;border-radius:12px;margin-top:12px;border:2px solid #334155}
 hr{border:1px solid #334155}
 
 @media (max-width:768px){
@@ -79,6 +80,7 @@ h1{font-size:22px}
 <button onclick="scan()">Scan</button>
 <button onclick="downloadReport()">Download JSON Report</button>
 <button onclick="downloadPDF()">Download PDF Report</button>
+<button onclick="captureScreenshot()">Capture Screenshot</button>
 <button onclick="logout()">Logout</button>
 
 <div id="out"></div>
@@ -358,6 +360,22 @@ function showResult(data){
     const technologies = data.technologies?.length ? data.technologies.join(", ") : "Unknown";
     const httpMethods = data.http_methods?.length ? data.http_methods.join(", ") : "Unknown";
 
+    const whoisAsn = data.whois_asn
+        ? `
+            <div class="finding INFO">
+                <p><b>IP:</b> ${data.whois_asn.ip || "Unknown"}</p>
+                <p><b>ASN:</b> ${data.whois_asn.asn || "Unknown"}</p>
+                <p><b>Organization:</b> ${data.whois_asn.organization || "Unknown"}</p>
+                <p><b>ISP:</b> ${data.whois_asn.isp || "Unknown"}</p>
+                <p><b>Country:</b> ${data.whois_asn.country || "Unknown"}</p>
+                <p><b>Region/City:</b> ${(data.whois_asn.region || "Unknown") + " / " + (data.whois_asn.city || "Unknown")}</p>
+                <p><b>Reverse DNS:</b> ${data.whois_asn.reverse_dns || "None"}</p>
+                <p><b>Network Range:</b> ${data.whois_asn.network_range || "Unknown"}</p>
+                <p><b>Error:</b> ${data.whois_asn.error || "None"}</p>
+            </div>
+        `
+        : "<p>No Whois / ASN data available</p>";
+
     const sslSubject = formatObject(data.ssl?.subject);
     const sslIssuer = formatObject(data.ssl?.issuer);
 
@@ -492,6 +510,11 @@ function showResult(data){
 
             <hr>
 
+            <h3>🏢 Whois / ASN</h3>
+            ${whoisAsn}
+
+            <hr>
+
             <h3>🤖 Robots.txt</h3>
             <p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p>
             <p><b>Summary:</b> ${data.robots_txt?.summary || "Unknown"}</p>
@@ -558,6 +581,70 @@ function showResult(data){
     `;
 }
 
+
+async function captureScreenshot(){
+    const token = localStorage.getItem("token");
+    const target = document.getElementById("t").value;
+
+    if(!token){
+        alert("❌ لازم تسجل دخول");
+        return;
+    }
+
+    if(!target){
+        alert("❌ اكتب الموقع أولاً");
+        return;
+    }
+
+    document.getElementById("out").innerHTML = `
+        <div class="card INFO">
+            <h3>📸 Capturing Screenshot...</h3>
+            <p><b>Target:</b> ${target}</p>
+            <p>Please wait...</p>
+        </div>
+    `;
+
+    const res = await fetch(API + "/screenshot", {
+        method:"POST",
+        headers:{
+            "Content-Type":"application/json",
+            "Authorization":"Bearer " + token
+        },
+        body:JSON.stringify({target})
+    });
+
+    const data = await res.json();
+
+    if(!res.ok){
+        document.getElementById("out").innerHTML = `
+            <div class="card HIGH">
+                <h3>❌ Screenshot Failed</h3>
+                <p>${data.detail || "Could not capture screenshot"}</p>
+            </div>
+        `;
+        return;
+    }
+
+    document.getElementById("out").innerHTML = `
+        <div class="card INFO">
+            <h2>📸 Screenshot Result</h2>
+            <p><b>Target:</b> ${data.target}</p>
+            <p><b>Final URL:</b> ${data.final_url || "Unknown"}</p>
+            <img class="screenshot-img" src="${data.data_url}" alt="Website Screenshot">
+            <br><br>
+            <button onclick="downloadScreenshot('${data.data_url}', '${target}')">Download Screenshot</button>
+        </div>
+    `;
+}
+
+function downloadScreenshot(dataUrl, target){
+    const a = document.createElement("a");
+    const safeName = (target || "target").replace(/[^a-z0-9]/gi, "-").toLowerCase();
+    a.href = dataUrl;
+    a.download = `screenshot-${safeName}.png`;
+    a.click();
+}
+
 function downloadReport(){
     if(!lastReport){
         alert("❌ No report to download");
@@ -606,6 +693,9 @@ function downloadPDF(){
                 <p><b>Nikto-like Checks:</b> ${lastReport.nikto_checks?.length || 0}</p>
                 <p><b>TLS Version:</b> ${lastReport.ssl?.tls_version || "Unknown"}</p>
                 <p><b>Cipher:</b> ${lastReport.ssl?.cipher_name || "Unknown"}</p>
+                <p><b>ASN:</b> ${lastReport.whois_asn?.asn || "Unknown"}</p>
+                <p><b>Organization:</b> ${lastReport.whois_asn?.organization || "Unknown"}</p>
+                <p><b>Country:</b> ${lastReport.whois_asn?.country || "Unknown"}</p>
             </div>
 
             <script>

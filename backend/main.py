@@ -138,6 +138,10 @@ class ScanRequest(BaseModel):
     profile: str = "full"
 
 
+class ScreenshotRequest(BaseModel):
+    target: str
+
+
 def send_discord_alert(target, risk, score):
     if not DISCORD_WEBHOOK_URL:
         return
@@ -159,7 +163,7 @@ Time: {datetime.now()}
 
 
 def save_scan_result(target, result, user_id):
-    save_scan(
+    return save_scan(
         user_id=user_id,
         target=target,
         risk=result.get("risk"),
@@ -570,6 +574,70 @@ def queue_status(
         "failed": len(failed_jobs),
         "cancelled": len(cancelled_jobs)
     }
+
+
+@app.post("/screenshot")
+@limiter.limit("10/minute")
+async def screenshot_target(
+    request: Request,
+    data: ScreenshotRequest,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    target = data.target.strip()
+
+    if not target:
+        raise HTTPException(status_code=400, detail="Target is required")
+
+    if not target.startswith("http://") and not target.startswith("https://"):
+        target = "https://" + target
+
+    try:
+        from playwright.async_api import async_playwright
+    except Exception:
+        raise HTTPException(
+            status_code=500,
+            detail="Screenshot engine is not installed. Add 'playwright' to requirements.txt and set Render build command: python -m playwright install chromium"
+        )
+
+    browser = None
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"]
+            )
+
+            page = await browser.new_page(
+                viewport={"width": 1366, "height": 768},
+                user_agent="ThreatScanner-Screenshot/1.0"
+            )
+
+            await page.goto(target, wait_until="networkidle", timeout=20000)
+            image_bytes = await page.screenshot(full_page=True, type="png")
+            await browser.close()
+
+            import base64
+            image_base64 = base64.b64encode(image_bytes).decode("utf-8")
+
+            return {
+                "target": data.target,
+                "final_url": page.url,
+                "image_type": "image/png",
+                "image_base64": image_base64,
+                "data_url": f"data:image/png;base64,{image_base64}"
+            }
+
+    except Exception as e:
+        try:
+            if browser:
+                await browser.close()
+        except Exception:
+            pass
+
+        logger.error(f"Screenshot failed | target={target} | error={e}")
+        raise HTTPException(status_code=500, detail=f"Screenshot failed: {str(e)}")
 
 
 @app.get("/history")
