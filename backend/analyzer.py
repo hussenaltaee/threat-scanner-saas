@@ -730,6 +730,77 @@ async def check_cves(client, technologies):
     return results
 
 
+
+async def check_whois_asn(client, ip):
+    result = {
+        "ip": ip,
+        "asn": None,
+        "organization": None,
+        "isp": None,
+        "country": None,
+        "country_code": None,
+        "region": None,
+        "city": None,
+        "timezone": None,
+        "network_range": None,
+        "reverse_dns": None,
+        "source": "ip-api.com",
+        "error": None
+    }
+
+    if not ip:
+        result["error"] = "No IP address available"
+        return result
+
+    try:
+        url = f"http://ip-api.com/json/{ip}"
+        params = {
+            "fields": "status,message,country,countryCode,regionName,city,timezone,isp,org,as,query,reverse"
+        }
+
+        res = await client.get(url, params=params, timeout=6)
+
+        if res.status_code != 200:
+            result["error"] = f"ASN lookup HTTP {res.status_code}"
+            return result
+
+        data = res.json()
+
+        if data.get("status") != "success":
+            result["error"] = data.get("message", "ASN lookup failed")
+            return result
+
+        as_text = data.get("as") or ""
+        asn = None
+        organization_from_as = None
+
+        if as_text:
+            parts = as_text.split(" ", 1)
+            asn = parts[0]
+            organization_from_as = parts[1] if len(parts) > 1 else None
+
+        result.update({
+            "ip": data.get("query", ip),
+            "asn": asn,
+            "organization": data.get("org") or organization_from_as,
+            "isp": data.get("isp"),
+            "country": data.get("country"),
+            "country_code": data.get("countryCode"),
+            "region": data.get("regionName"),
+            "city": data.get("city"),
+            "timezone": data.get("timezone"),
+            "network_range": as_text,
+            "reverse_dns": data.get("reverse"),
+            "error": None
+        })
+
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+
 def build_structured_storage(findings, vulnerability_checks, subdomains, cve_results, open_ports):
     scan_findings = []
     scan_cves = []
@@ -908,6 +979,7 @@ async def analyze(target, profile="full"):
         dns_task = check_dns_security(host)
         robots_task = check_robots_txt(client, url)
         security_txt_task = check_security_txt(client, url)
+        whois_asn_task = check_whois_asn(client, ip)
         subdomains_task = check_subdomains(client, host) if enable_subdomains else asyncio.sleep(0, result=[])
         nikto_task = check_nikto_paths(client, url) if enable_nikto else asyncio.sleep(0, result=[])
 
@@ -928,6 +1000,7 @@ async def analyze(target, profile="full"):
             dns_security,
             robots_txt,
             security_txt,
+            whois_asn,
             subdomains,
             nikto_checks,
             ports_result,
@@ -939,6 +1012,7 @@ async def analyze(target, profile="full"):
             dns_task,
             robots_task,
             security_txt_task,
+            whois_asn_task,
             subdomains_task,
             nikto_task,
             ports_task,
@@ -1097,6 +1171,26 @@ async def analyze(target, profile="full"):
     if subdomains:
         add_finding(findings, "Subdomains Discovered", "INFO", f"{len(subdomains)} common subdomains were discovered.", "Review discovered subdomains and ensure unused environments are removed or protected.", "Subdomains")
 
+    if whois_asn and not whois_asn.get("error"):
+        whois_evidence = ", ".join([
+            str(x) for x in [
+                whois_asn.get("asn"),
+                whois_asn.get("organization"),
+                whois_asn.get("isp"),
+                whois_asn.get("country")
+            ] if x
+        ])
+
+        add_finding(
+            findings,
+            "Whois / ASN Information Collected",
+            "INFO",
+            "Public network ownership and ASN information was collected for the target IP.",
+            "Review hosting provider, ASN, and geolocation information for asset inventory and exposure tracking.",
+            "Whois/ASN",
+            whois_evidence or whois_asn.get("ip")
+        )
+
     for item in cve_results:
         for cve in item.get("cves", []):
             severity = cve.get("severity", "UNKNOWN")
@@ -1167,6 +1261,7 @@ async def analyze(target, profile="full"):
         "dns_security": dns_security,
         "robots_txt": robots_txt,
         "security_txt": security_txt,
+        "whois_asn": whois_asn,
         "subdomains": subdomains,
         "nikto_checks": nikto_checks,
         "security_headers": {
