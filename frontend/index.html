@@ -523,7 +523,16 @@ function showResult(data){
             <hr>
 
             <h3>🛡️ WAF Detection</h3>
-            <p>${data.waf || "Unknown"}</p>
+
+            <div class="finding INFO">
+                <p><b>Name:</b> ${data.waf?.name || data.waf || "Unknown"}</p>
+                <p><b>Confidence:</b> ${data.waf?.confidence || "0%"}</p>
+                <p><b>Evidence:</b> ${
+                    data.waf?.evidence?.length
+                    ? data.waf.evidence.join(", ")
+                    : "None"
+                }</p>
+            </div>
 
             <hr>
 

@@ -362,22 +362,103 @@ def detect_technologies(response):
 
 def detect_waf(response):
     if not response:
-        return "Unknown"
+        return {
+            "name": "Unknown",
+            "confidence": "0%",
+            "evidence": []
+        }
 
     headers = response.headers
+    text_headers = str(headers).lower()
     server = headers.get("Server", "").lower()
+    powered = headers.get("X-Powered-By", "").lower()
 
-    if "cloudflare" in server or headers.get("CF-Ray"):
-        return "Cloudflare"
-    if headers.get("Akamai-Request-ID"):
-        return "Akamai"
-    if headers.get("X-Sucuri-ID"):
-        return "Sucuri"
-    if "x-waf" in str(headers).lower():
-        return "Possible WAF"
+    combined = f"{text_headers} {server} {powered}".lower()
 
-    return "Not detected"
+    waf_db = [
+        {
+            "name": "Cloudflare",
+            "signatures": ["cf-ray", "cloudflare", "__cf_bm", "cf-cache-status", "cf-request-id"]
+        },
+        {
+            "name": "Akamai",
+            "signatures": ["akamai", "akamaighost", "x-akamai", "akamai-request-id"]
+        },
+        {
+            "name": "AWS WAF",
+            "signatures": ["awselb", "x-amzn", "x-amz-cf", "aws-waf", "aws"]
+        },
+        {
+            "name": "Imperva / Incapsula",
+            "signatures": ["imperva", "incapsula", "visid_incap", "x-iinfo"]
+        },
+        {
+            "name": "Sucuri",
+            "signatures": ["sucuri", "x-sucuri", "x-sucuri-id", "x-sucuri-cache"]
+        },
+        {
+            "name": "F5 BIG-IP",
+            "signatures": ["bigip", "f5", "big-ip", "x-waf"]
+        },
+        {
+            "name": "Barracuda",
+            "signatures": ["barra", "barracuda"]
+        },
+        {
+            "name": "Fortinet",
+            "signatures": ["fortigate", "fortiwaf", "fortinet"]
+        },
+        {
+            "name": "ModSecurity",
+            "signatures": ["mod_security", "modsecurity", "modsec"]
+        },
+        {
+            "name": "Fastly",
+            "signatures": ["fastly", "x-fastly", "x-served-by"]
+        },
+        {
+            "name": "Azure Front Door",
+            "signatures": ["azure", "x-azure", "afd", "azurefd"]
+        },
+        {
+            "name": "StackPath",
+            "signatures": ["stackpath"]
+        },
+        {
+            "name": "CloudFront",
+            "signatures": ["cloudfront", "x-amz-cf-id", "x-amz-cf-pop"]
+        }
+    ]
 
+    best_match = {
+        "name": "Not detected",
+        "confidence": "0%",
+        "evidence": []
+    }
+
+    best_score = 0
+
+    for waf in waf_db:
+        matched = []
+
+        for signature in waf["signatures"]:
+            sig = signature.lower()
+
+            if sig in combined:
+                matched.append(signature)
+
+        if matched:
+            confidence_value = min(100, 40 + (len(matched) * 20))
+
+            if confidence_value > best_score:
+                best_score = confidence_value
+                best_match = {
+                    "name": waf["name"],
+                    "confidence": f"{confidence_value}%",
+                    "evidence": matched
+                }
+
+    return best_match
 
 def check_cors(response):
     issues = []
