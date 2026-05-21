@@ -9,3 +9,4 @@ pydantic
 dnspython
 python-dotenv
 slowapi
+playwright
