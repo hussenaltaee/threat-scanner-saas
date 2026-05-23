@@ -1,15 +1,8 @@
 import sqlite3
 import hashlib
 import json
-import os
 
 DB_NAME = "database.db"
-
-# TEMP FIX FOR RENDER FREE PLAN:
-# This removes the old broken SQLite database once after deploy.
-# IMPORTANT: After the first successful deploy/register/scan, remove this block.
-if os.path.exists(DB_NAME):
-    os.remove(DB_NAME)
 
 
 def get_connection():
@@ -339,25 +332,44 @@ def get_scan_details(scan_id, user_id):
         conn.close()
         return None
 
-    c.execute("SELECT title, severity, category, description, evidence, fix FROM scan_findings WHERE scan_id=?", (scan_id,))
+    c.execute(
+        "SELECT title, severity, category, description, evidence, fix FROM scan_findings WHERE scan_id=?",
+        (scan_id,)
+    )
     findings = [dict(row) for row in c.fetchall()]
 
-    c.execute("SELECT subdomain, ips, http, https, status_code, final_url FROM scan_subdomains WHERE scan_id=?", (scan_id,))
+    c.execute(
+        "SELECT subdomain, ips, http, https, status_code, final_url FROM scan_subdomains WHERE scan_id=?",
+        (scan_id,)
+    )
+
     subdomains = []
+
     for row in c.fetchall():
         item = dict(row)
+
         try:
             item["ips"] = json.loads(item["ips"]) if item["ips"] else []
         except Exception:
             item["ips"] = []
+
         item["http"] = bool(item["http"])
         item["https"] = bool(item["https"])
+
         subdomains.append(item)
 
-    c.execute("SELECT port, service, banner, risk FROM scan_ports WHERE scan_id=?", (scan_id,))
+    c.execute(
+        "SELECT port, service, banner, risk FROM scan_ports WHERE scan_id=?",
+        (scan_id,)
+    )
+
     ports = [dict(row) for row in c.fetchall()]
 
-    c.execute("SELECT technology, cve_id, severity, score, published, description, url FROM scan_cves WHERE scan_id=?", (scan_id,))
+    c.execute(
+        "SELECT technology, cve_id, severity, score, published, description, url FROM scan_cves WHERE scan_id=?",
+        (scan_id,)
+    )
+
     cves = [dict(row) for row in c.fetchall()]
 
     conn.close()
