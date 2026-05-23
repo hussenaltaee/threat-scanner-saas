@@ -143,24 +143,72 @@ class ScreenshotRequest(BaseModel):
     target: str
 
 
-def send_discord_alert(target, risk, score):
+def send_discord_alert(target, risk, score, result=None):
     if not DISCORD_WEBHOOK_URL:
+        logger.warning("Discord webhook not configured")
         return
 
-    message = {
-        "content": f"""
-🚨 HIGH RISK ALERT
-Target: {target}
-Risk: {risk}
-Score: {score}
-Time: {datetime.now()}
-"""
+    if risk not in ["HIGH", "CRITICAL"]:
+        logger.info(f"No Discord alert needed | target={target} | risk={risk} | score={score}")
+        return
+
+    findings = []
+    cves = []
+
+    if isinstance(result, dict):
+        findings = result.get("findings", []) or result.get("vulnerability_checks", [])
+
+        cve_groups = result.get("cve_results", [])
+        for group in cve_groups:
+            for cve in group.get("cves", []):
+                cves.append(cve)
+
+    top_findings = findings[:5]
+    top_cves = cves[:5]
+
+    findings_text = "\n".join([
+        f"- {f.get('severity', 'UNKNOWN')} | {f.get('title') or f.get('name', 'Finding')}"
+        for f in top_findings
+    ]) or "No findings listed"
+
+    cves_text = "\n".join([
+        f"- {c.get('id', 'CVE')} | {c.get('severity', 'UNKNOWN')} | Score: {c.get('score', 'N/A')}"
+        for c in top_cves
+    ]) or "No CVEs listed"
+
+    color = 16711680 if risk == "CRITICAL" else 16744192
+
+    payload = {
+        "embeds": [
+            {
+                "title": "🚨 Threat Scanner Alert",
+                "description": f"High risk scan detected for `{target}`",
+                "color": color,
+                "fields": [
+                    {"name": "🎯 Target", "value": str(target), "inline": True},
+                    {"name": "⚠️ Risk", "value": str(risk), "inline": True},
+                    {"name": "📊 Score", "value": f"{score}/100", "inline": True},
+                    {"name": "🕳️ Top Findings", "value": findings_text[:1000], "inline": False},
+                    {"name": "🧬 Top CVEs", "value": cves_text[:1000], "inline": False},
+                    {"name": "🕒 Time", "value": datetime.utcnow().isoformat() + " UTC", "inline": False}
+                ],
+                "footer": {
+                    "text": "Threat Scanner SaaS"
+                }
+            }
+        ]
     }
 
     try:
-        requests.post(DISCORD_WEBHOOK_URL, json=message, timeout=5)
+        res = requests.post(DISCORD_WEBHOOK_URL, json=payload, timeout=8)
+
+        if res.status_code not in [200, 204]:
+            logger.error(f"Discord alert failed | status={res.status_code} | body={res.text}")
+        else:
+            logger.info(f"Discord alert sent | target={target} | risk={risk} | score={score}")
+
     except Exception as e:
-        logger.error(f"Discord alert failed: {e}")
+        logger.error(f"Discord alert exception: {e}")
 
 
 def save_scan_result(target, result, user_id):
@@ -317,8 +365,8 @@ async def scan(
     scan_id = save_scan_result(data.target, result, user["id"])
     result["scan_id"] = scan_id
 
-    if result.get("risk") == "HIGH":
-        send_discord_alert(data.target, result.get("risk"), result.get("score"))
+    if result.get("risk") in ["HIGH", "CRITICAL"]:
+        send_discord_alert(data.target, result.get("risk"), result.get("score"), result)
 
     return result
 
@@ -504,8 +552,8 @@ async def run_scan_job(job_id, target, profile, user_id):
         scan_id = save_scan_result(target, result, user_id)
         result["scan_id"] = scan_id
 
-        if result.get("risk") == "HIGH":
-            send_discord_alert(target, result.get("risk"), result.get("score"))
+        if result.get("risk") in ["HIGH", "CRITICAL"]:
+            send_discord_alert(target, result.get("risk"), result.get("score"), result)
 
         scan_jobs[job_id]["status"] = "completed"
         scan_jobs[job_id]["progress"] = 100
