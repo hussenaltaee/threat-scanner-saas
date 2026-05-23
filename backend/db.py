@@ -1,8 +1,15 @@
 import sqlite3
 import hashlib
 import json
+import os
 
 DB_NAME = "database.db"
+
+# TEMP FIX FOR RENDER FREE PLAN:
+# This removes the old broken SQLite database once after deploy.
+# IMPORTANT: After the first successful deploy/register/scan, remove this block.
+if os.path.exists(DB_NAME):
+    os.remove(DB_NAME)
 
 
 def get_connection():
