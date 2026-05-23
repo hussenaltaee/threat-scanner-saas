@@ -25,7 +25,8 @@ from db import (
     create_user,
     verify_user,
     save_scan,
-    get_scan_details
+    get_scan_details,
+    delete_scan
 )
 
 from analyzer import analyze
@@ -680,3 +681,23 @@ def scan_details(
         raise HTTPException(status_code=404, detail="Scan not found")
 
     return report
+
+
+@app.delete("/history/{scan_id}")
+@limiter.limit("20/minute")
+def delete_scan_history(
+    request: Request,
+    scan_id: int,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    deleted = delete_scan(scan_id, user["id"])
+
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Scan not found")
+
+    return {
+        "success": True,
+        "message": "Scan deleted",
+        "scan_id": scan_id
+    }

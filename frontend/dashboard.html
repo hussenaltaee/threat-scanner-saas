@@ -1,225 +1,305 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Threat Scanner Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+:root{
+    --bg:#0f172a;
+    --panel:#111827;
+    --card:#1e293b;
+    --muted:#94a3b8;
+    --text:#f8fafc;
+    --line:#334155;
+    --blue:#38bdf8;
+    --green:#22c55e;
+    --yellow:#f59e0b;
+    --red:#ef4444;
+    --critical:#dc2626;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(135deg,#020617,#0f172a 55%,#111827);color:var(--text);min-height:100vh}
+header{position:sticky;top:0;z-index:20;background:rgba(15,23,42,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{margin:0;font-size:24px}.sub{color:var(--muted);font-size:13px;margin-top:4px}.wrap{max-width:1200px;margin:auto;padding:22px}
+.actions{display:flex;gap:10px;flex-wrap:wrap}button,a.btn{background:var(--blue);color:#020617;border:none;border-radius:10px;padding:10px 13px;font-weight:bold;cursor:pointer;text-decoration:none;display:inline-block}.danger{background:var(--red);color:#fff}.ghost{background:#334155;color:#fff}.green{background:var(--green);color:#052e16}
+.toolbar{display:grid;grid-template-columns:1.5fr .8fr .8fr auto;gap:10px;margin:18px 0}.toolbar input,.toolbar select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#020617;color:#fff}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}.card{background:rgba(30,41,59,.96);border:1px solid var(--line);border-left:6px solid var(--blue);border-radius:16px;padding:16px;box-shadow:0 12px 28px rgba(0,0,0,.25)}.card h3{margin:0 0 8px}.card p{line-height:1.55}.metric p{font-size:26px;font-weight:bold;margin:6px 0 0}.low{border-left-color:var(--green)}.medium{border-left-color:var(--yellow)}.high{border-left-color:var(--red)}.critical{border-left-color:var(--critical)}.unknown{border-left-color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.scan-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#334155;color:#fff;font-weight:bold;font-size:12px}.badge.LOW{background:#14532d}.badge.MEDIUM{background:#78350f}.badge.HIGH{background:#7f1d1d}.badge.CRITICAL{background:#7f1d1d}.muted{color:var(--muted)}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hidden{display:none}.report-section{background:#020617;border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}.mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}.mini{background:#0f172a;border:1px solid #1f2937;border-radius:12px;padding:10px}.mini b{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}.finding{background:#0f172a;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:12px;margin:10px 0}pre{white-space:pre-wrap;word-break:break-word;background:#020617;border:1px solid var(--line);padding:14px;border-radius:12px;max-height:420px;overflow:auto}.toast{position:fixed;right:18px;bottom:18px;background:#020617;border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:12px;padding:12px 14px;box-shadow:0 12px 30px rgba(0,0,0,.4);display:none;z-index:99}a{color:var(--blue)}
+@media(max-width:800px){header{padding:14px}.wrap{padding:14px}.toolbar{grid-template-columns:1fr}h1{font-size:21px}.actions{width:100%}.actions button,.actions a{flex:1;text-align:center}.metric p{font-size:22px}}
+</style>
+</head>
+<body>
+<header>
+    <div>
+        <h1>📊 Threat Scanner Dashboard</h1>
+        <div class="sub">History, queue status, reports, and exports</div>
+    </div>
+    <div class="actions">
+        <a class="btn ghost" href="index.html">🛡️ New Scan</a>
+        <button onclick="loadData(true)">🔄 Refresh</button>
+        <button class="danger" onclick="logout()">Logout</button>
+    </div>
+</header>
+
+<div class="wrap">
+    <div id="queueBox"></div>
+
+    <div class="toolbar">
+        <input id="searchBox" placeholder="Search target..." oninput="renderHistory()">
+        <select id="riskFilter" onchange="renderHistory()">
+            <option value="ALL">All Risks</option>
+            <option value="LOW">LOW</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="HIGH">HIGH</option>
+            <option value="CRITICAL">CRITICAL</option>
+            <option value="UNKNOWN">UNKNOWN</option>
+        </select>
+        <select id="sortBox" onchange="renderHistory()">
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+            <option value="score_high">Highest Score</option>
+            <option value="score_low">Lowest Score</option>
+        </select>
+        <button class="green" onclick="exportHistory()">⬇️ Export History</button>
+    </div>
+
+    <div id="historyStats" class="summary"></div>
+    <div id="container" class="grid"></div>
+</div>
+
+<div id="toast" class="toast"></div>
+
 <script>
-const API = "https://threat-scanner-saas.onrender.com";
+const API = "https://threat-scanner-saas-1.onrender.com";
+let historyItems = [];
+let autoRefreshTimer = null;
 
-async function loadQueueStatus() {
-    const token = localStorage.getItem("token");
+function token(){ return localStorage.getItem("token"); }
+function esc(value){
+    return String(value ?? "")
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+}
+function riskClass(risk){
+    const r = String(risk || "UNKNOWN").toUpperCase();
+    if(r === "LOW") return "low";
+    if(r === "MEDIUM") return "medium";
+    if(r === "HIGH") return "high";
+    if(r === "CRITICAL") return "critical";
+    return "unknown";
+}
+function showToast(msg){
+    const t = document.getElementById("toast");
+    t.innerHTML = esc(msg);
+    t.style.display = "block";
+    setTimeout(() => t.style.display = "none", 2600);
+}
 
-    if (!token) return;
-
-    const box = document.getElementById("queueBox");
-    if (!box) return;
-
-    const res = await fetch(API + "/queue-status", {
-        headers: {
-            "Authorization": "Bearer " + token
+async function apiFetch(path, options = {}){
+    const res = await fetch(API + path, {
+        ...options,
+        headers:{
+            "Content-Type":"application/json",
+            "Authorization":"Bearer " + token(),
+            ...(options.headers || {})
         }
     });
+    const data = await res.json().catch(() => ({}));
+    if(res.status === 401){
+        localStorage.removeItem("token");
+        document.getElementById("container").innerHTML = `<div class="card high"><h3>❌ Session expired</h3><p>Please login again from index.html</p></div>`;
+    }
+    return {res, data};
+}
 
-    const data = await res.json();
-
-    if (!res.ok) {
-        box.innerHTML = `
-            <div class="card high">
-                <h3>⚠️ Queue Status Error</h3>
-                <p>${data.detail || "Could not load queue status"}</p>
-            </div>
-        `;
+async function loadQueueStatus(){
+    if(!token()) return;
+    const box = document.getElementById("queueBox");
+    const {res, data} = await apiFetch("/queue-status");
+    if(!res.ok){
+        box.innerHTML = `<div class="card high"><h3>⚠️ Queue Status Error</h3><p>${esc(data.detail || "Could not load queue status")}</p></div>`;
         return;
     }
-
     box.innerHTML = `
         <div class="summary">
-            <div class="card">
-                <h3>📦 Queue Size</h3>
-                <p>${data.queue_size}</p>
-            </div>
+            <div class="card metric"><h3>📦 Queue Size</h3><p>${esc(data.queue_size)}</p></div>
+            <div class="card metric medium"><h3>⚡ Running</h3><p>${esc(data.running)}</p></div>
+            <div class="card metric"><h3>⏳ Queued</h3><p>${esc(data.queued)}</p></div>
+            <div class="card metric low"><h3>✅ Completed</h3><p>${esc(data.completed)}</p></div>
+            <div class="card metric high"><h3>❌ Failed</h3><p>${esc(data.failed)}</p></div>
+            <div class="card metric unknown"><h3>🛑 Cancelled</h3><p>${esc(data.cancelled ?? 0)}</p></div>
+        </div>`;
+}
 
-            <div class="card medium">
-                <h3>⚡ Running</h3>
-                <p>${data.running}</p>
-            </div>
+async function loadData(manual=false){
+    if(!token()){
+        document.getElementById("container").innerHTML = `<div class="card high"><h3>❌ Not Logged In</h3><p>Please login first from index.html</p></div>`;
+        return;
+    }
+    await loadQueueStatus();
+    const {res, data} = await apiFetch("/history");
+    if(!res.ok){
+        document.getElementById("container").innerHTML = `<div class="card high"><h3>❌ Error</h3><p>${esc(data.detail || "Could not load history")}</p></div>`;
+        return;
+    }
+    historyItems = Array.isArray(data.data) ? data.data : [];
+    renderHistory();
+    if(manual) showToast("Dashboard refreshed");
+}
 
-            <div class="card">
-                <h3>⏳ Queued</h3>
-                <p>${data.queued}</p>
-            </div>
+function normalizeItem(item){
+    if(Array.isArray(item)){
+        return {id:item[0], target:item[1], risk:item[2], score:item[3], created_at:item[4]};
+    }
+    return item || {};
+}
 
-            <div class="card low">
-                <h3>✅ Completed</h3>
-                <p>${data.completed}</p>
-            </div>
+function renderHistory(){
+    const container = document.getElementById("container");
+    const stats = document.getElementById("historyStats");
+    const q = document.getElementById("searchBox").value.toLowerCase().trim();
+    const filter = document.getElementById("riskFilter").value;
+    const sort = document.getElementById("sortBox").value;
 
-            <div class="card high">
-                <h3>❌ Failed</h3>
-                <p>${data.failed}</p>
+    let items = historyItems.map(normalizeItem);
+    const total = items.length;
+    const high = items.filter(x => ["HIGH","CRITICAL"].includes(String(x.risk).toUpperCase())).length;
+    const med = items.filter(x => String(x.risk).toUpperCase() === "MEDIUM").length;
+    const avg = total ? Math.round(items.reduce((s,x) => s + Number(x.score || 0), 0) / total) : 0;
+
+    stats.innerHTML = `
+        <div class="card metric"><h3>🧾 Total Scans</h3><p>${total}</p></div>
+        <div class="card metric high"><h3>🚨 High/Critical</h3><p>${high}</p></div>
+        <div class="card metric medium"><h3>⚠️ Medium</h3><p>${med}</p></div>
+        <div class="card metric"><h3>📈 Average Score</h3><p>${avg}/100</p></div>`;
+
+    if(q) items = items.filter(x => String(x.target || "").toLowerCase().includes(q));
+    if(filter !== "ALL") items = items.filter(x => String(x.risk || "UNKNOWN").toUpperCase() === filter);
+
+    items.sort((a,b) => {
+        if(sort === "oldest") return new Date(a.created_at || 0) - new Date(b.created_at || 0);
+        if(sort === "score_high") return Number(b.score || 0) - Number(a.score || 0);
+        if(sort === "score_low") return Number(a.score || 0) - Number(b.score || 0);
+        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
+    });
+
+    if(items.length === 0){
+        container.innerHTML = `<div class="card"><h3>📭 No Scan History</h3><p>No scans match your current filters.</p></div>`;
+        return;
+    }
+
+    container.innerHTML = items.map(item => {
+        const r = String(item.risk || "UNKNOWN").toUpperCase();
+        return `
+        <div class="card ${riskClass(r)}">
+            <div class="scan-title">
+                <h3>🌐 ${esc(item.target || "Unknown target")}</h3>
+                <span class="badge ${esc(r)}">${esc(r)}</span>
+            </div>
+            <p><b>Score:</b> ${esc(item.score ?? "N/A")}/100</p>
+            <p><b>Date:</b> <span class="muted">${esc(item.created_at || "Unknown")}</span></p>
+            <div class="row">
+                <button onclick="viewReport(${Number(item.id)})">View Report</button>
+                <button class="ghost" onclick="downloadSingleReport(${Number(item.id)})">JSON</button>
+                <button class="danger" onclick="deleteHistory(${Number(item.id)})">Delete</button>
+            </div>
+        </div>`;
+    }).join("");
+}
+
+function renderReportHTML(report){
+    const vulns = report.vulnerability_checks || [];
+    const findings = report.findings || [];
+    const subdomains = report.subdomains || report.structured?.scan_subdomains || [];
+    const cvesRaw = report.cve_results || [];
+    const structuredCves = report.structured?.scan_cves || [];
+    const ports = report.open_ports || report.structured?.scan_ports || [];
+
+    const cveCount = cvesRaw.reduce((s,g) => s + ((g.cves || []).length), 0) + structuredCves.length;
+    const tls = report.ssl || {};
+
+    const findingsHTML = (vulns.length || findings.length)
+        ? [...vulns, ...findings].map(f => `<div class="finding ${riskClass(f.severity)}"><h4>🕳️ ${esc(f.name || f.title || "Finding")}</h4><p><b>Severity:</b> ${esc(f.severity || "UNKNOWN")}</p><p><b>Evidence:</b> ${esc(f.evidence || "-")}</p><p><b>Fix:</b> ${esc(f.fix || "-")}</p></div>`).join("")
+        : `<p>✅ No findings stored for this report.</p>`;
+
+    const subHTML = subdomains.length
+        ? subdomains.map(s => `<div class="finding"><p><b>Subdomain:</b> ${esc(s.subdomain)}</p><p><b>IPs:</b> ${esc(Array.isArray(s.ips) ? s.ips.join(", ") : s.ips)}</p><p><b>HTTPS:</b> ${s.https ? "✅ Yes" : "❌ No"}</p><p><b>Status:</b> ${esc(s.status_code || "Unknown")}</p><p><b>Final URL:</b> ${esc(s.final_url || "N/A")}</p></div>`).join("")
+        : `<p>No subdomains stored.</p>`;
+
+    let cveHTML = "";
+    if(cvesRaw.length){
+        cveHTML += cvesRaw.map(group => `<div class="finding"><h4>🧩 ${esc(group.technology || "Technology")}</h4>${(group.cves || []).map(c => `<div class="finding ${riskClass(c.severity)}"><p><b>${esc(c.id || c.cve_id)}</b></p><p><b>Severity:</b> ${esc(c.severity || "UNKNOWN")}</p><p><b>Score:</b> ${esc(c.score || "N/A")}</p><p>${esc(c.description || "")}</p>${c.url ? `<a href="${esc(c.url)}" target="_blank">Open reference</a>` : ""}</div>`).join("") || "<p>No CVEs found.</p>"}</div>`).join("");
+    }
+    if(structuredCves.length){
+        cveHTML += structuredCves.map(c => `<div class="finding ${riskClass(c.severity)}"><p><b>${esc(c.cve_id)}</b> — ${esc(c.technology)}</p><p><b>Severity:</b> ${esc(c.severity || "UNKNOWN")} | <b>Score:</b> ${esc(c.score || "N/A")}</p><p>${esc(c.description || "")}</p>${c.url ? `<a href="${esc(c.url)}" target="_blank">Open reference</a>` : ""}</div>`).join("");
+    }
+    if(!cveHTML) cveHTML = `<p>No CVE results stored.</p>`;
+
+    const portHTML = ports.length ? ports.map(p => `<div class="finding ${p.risk === "RISKY" ? "medium" : ""}"><p><b>Port:</b> ${esc(p.port)}</p><p><b>Service:</b> ${esc(p.service || "Unknown")}</p><p><b>Risk:</b> ${esc(p.risk || "NORMAL")}</p><p><b>Banner:</b> ${esc(p.banner || "-")}</p></div>`).join("") : `<p>No open ports stored.</p>`;
+
+    return `
+        <h1>🛡️ Scan Report</h1>
+        <div class="report-section ${riskClass(report.risk)}">
+            <div class="mini-grid">
+                <div class="mini"><b>Target</b>${esc(report.target)}</div>
+                <div class="mini"><b>Risk</b>${esc(report.risk)}</div>
+                <div class="mini"><b>Score</b>${esc(report.score)}/100</div>
+                <div class="mini"><b>Profile</b>${esc(report.profile || "full")}</div>
+                <div class="mini"><b>CVEs</b>${cveCount}</div>
+                <div class="mini"><b>Subdomains</b>${subdomains.length}</div>
             </div>
         </div>
-    `;
+        <div class="report-section"><h2>🔒 SSL / TLS</h2><p><b>Valid:</b> ${tls.valid ? "✅ Yes" : "❌ No"}</p><p><b>TLS Version:</b> ${esc(tls.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(tls.cipher_name || "Unknown")} / ${esc(tls.cipher_bits || "Unknown")} bits</p><p><b>Expiration:</b> ${esc(tls.info || "Unknown")}</p></div>
+        <div class="report-section"><h2>🕳️ Findings & Vulnerabilities</h2>${findingsHTML}</div>
+        <div class="report-section"><h2>🧬 CVE Results</h2>${cveHTML}</div>
+        <div class="report-section"><h2>🌍 Subdomains</h2>${subHTML}</div>
+        <div class="report-section"><h2>🚪 Open Ports</h2>${portHTML}</div>
+        <div class="report-section"><h2>📦 Full JSON</h2><pre>${esc(JSON.stringify(report, null, 2))}</pre></div>`;
 }
 
-async function loadData() {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        document.getElementById("container").innerHTML = `
-            <div class="card high">
-                <h3>❌ Not Logged In</h3>
-                <p>Please login first from index.html</p>
-            </div>
-        `;
-        return;
-    }
-
-    await loadQueueStatus();
-
-    const res = await fetch(API + "/history", {
-        headers: {
-            "Authorization": "Bearer " + token
-        }
-    });
-
-    const data = await res.json();
-
-    const container = document.getElementById("container");
-    container.innerHTML = "";
-
-    if (!res.ok) {
-        container.innerHTML = `
-            <div class="card high">
-                <h3>❌ Error</h3>
-                <p>${data.detail || "Could not load history"}</p>
-            </div>
-        `;
-        return;
-    }
-
-    if (!data.data || data.data.length === 0) {
-        container.innerHTML = `
-            <div class="card">
-                <h3>📭 No Scan History</h3>
-                <p>No scans found yet.</p>
-            </div>
-        `;
-        return;
-    }
-
-    data.data.forEach(item => {
-        const id = item[0];
-        const target = item[1];
-        const risk = item[2];
-        const score = item[3];
-        const date = item[4];
-
-        let cls = "low";
-        if (risk === "HIGH") cls = "high";
-        if (risk === "MEDIUM") cls = "medium";
-
-        container.innerHTML += `
-            <div class="card ${cls}">
-                <h3>🌐 ${target}</h3>
-                <p><b>Risk:</b> ${risk}</p>
-                <p><b>Score:</b> ${score}/100</p>
-                <p><b>Date:</b> ${date}</p>
-                <button onclick="viewReport(${id})">View Report</button>
-            </div>
-        `;
-    });
-}
-
-async function viewReport(id) {
-    const token = localStorage.getItem("token");
-
-    const res = await fetch(API + "/history/" + id, {
-        headers: {
-            "Authorization": "Bearer " + token
-        }
-    });
-
-    const report = await res.json();
-
-    if (!res.ok) {
-        alert(report.detail || "Could not load report");
-        return;
-    }
-
+async function viewReport(id){
+    const {res, data:report} = await apiFetch("/history/" + id);
+    if(!res.ok){ alert(report.detail || "Could not load report"); return; }
     const win = window.open("", "_blank");
-
-    win.document.write(`
-        <html>
-        <head>
-            <title>Scan Report</title>
-            <style>
-                body {
-                    font-family: Arial;
-                    background: #0f172a;
-                    color: white;
-                    padding: 25px;
-                }
-
-                .box {
-                    background: #1e293b;
-                    padding: 15px;
-                    border-radius: 10px;
-                    margin: 10px 0;
-                    border-left: 5px solid #38bdf8;
-                }
-
-                pre {
-                    white-space: pre-wrap;
-                    word-break: break-word;
-                    background: #020617;
-                    padding: 15px;
-                    border-radius: 10px;
-                    overflow-x: auto;
-                }
-
-                button {
-                    padding: 10px;
-                    border: none;
-                    border-radius: 6px;
-                    background: #38bdf8;
-                    font-weight: bold;
-                    cursor: pointer;
-                }
-
-                @media (max-width: 768px) {
-                    body {
-                        padding: 12px;
-                    }
-
-                    pre {
-                        font-size: 12px;
-                    }
-                }
-            </style>
-        </head>
-
-        <body>
-            <h1>🛡️ Scan Report</h1>
-
-            <div class="box">
-                <p><b>Target:</b> ${report.target}</p>
-                <p><b>Risk:</b> ${report.risk}</p>
-                <p><b>Score:</b> ${report.score}/100</p>
-                <p><b>Profile:</b> ${report.profile || "full"}</p>
-            </div>
-
-            <h2>Full JSON Report</h2>
-            <pre>${JSON.stringify(report, null, 2)}</pre>
-
-            <button onclick="window.print()">Download / Print PDF</button>
-        </body>
-        </html>
-    `);
-
+    win.document.write(`<!DOCTYPE html><html><head><title>Scan Report</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>${document.querySelector("style").innerHTML} body{padding:24px}.wrap{padding:0}</style></head><body><div class="wrap">${renderReportHTML(report)}<div class="row"><button onclick="window.print()">Download / Print PDF</button></div></div></body></html>`);
     win.document.close();
 }
 
-function logout() {
+async function downloadSingleReport(id){
+    const {res, data} = await apiFetch("/history/" + id);
+    if(!res.ok){ alert(data.detail || "Could not load report"); return; }
+    downloadJSON(data, `scan-report-${data.host || data.target || id}.json`);
+}
+
+function exportHistory(){ downloadJSON(historyItems.map(normalizeItem), "scan-history.json"); }
+function downloadJSON(data, filename){
+    const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename.replace(/[^a-z0-9_.-]/gi, "-").toLowerCase();
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function deleteHistory(id){
+    if(!confirm("Delete this scan from history?")) return;
+    const {res, data} = await apiFetch("/history/" + id, {method:"DELETE"});
+    if(!res.ok){ alert(data.detail || "Could not delete scan"); return; }
+    historyItems = historyItems.map(normalizeItem).filter(x => Number(x.id) !== Number(id));
+    renderHistory();
+    showToast("Scan deleted");
+}
+
+function logout(){
     localStorage.removeItem("token");
     window.location.href = "index.html";
 }
 
 loadData();
-setInterval(loadData, 5000);
+autoRefreshTimer = setInterval(() => loadData(false), 10000);
 </script>
+</body>
+</html>

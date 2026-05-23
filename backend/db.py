@@ -370,3 +370,36 @@ def get_scan_details(scan_id, user_id):
     }
 
     return report_data
+
+
+def delete_scan(scan_id, user_id):
+    conn = get_connection()
+    c = conn.cursor()
+
+    try:
+        c.execute("PRAGMA foreign_keys = ON")
+
+        c.execute(
+            "SELECT id FROM scans WHERE id=? AND user_id=?",
+            (scan_id, user_id)
+        )
+
+        row = c.fetchone()
+
+        if not row:
+            return False
+
+        c.execute(
+            "DELETE FROM scans WHERE id=? AND user_id=?",
+            (scan_id, user_id)
+        )
+
+        conn.commit()
+        return True
+
+    except Exception:
+        conn.rollback()
+        raise
+
+    finally:
+        conn.close()
