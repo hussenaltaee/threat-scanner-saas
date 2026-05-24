@@ -465,18 +465,59 @@ function requireToken(){
 }
 
 async function scan(){
-  const target = val("t"), profile = val("scan_profile"), token = requireToken();
+  const target = val("t");
+  const profile = val("scan_profile");
+  const token = requireToken();
+
   if(!token) return;
-  if(!target){ setStatus("❌ اكتب الموقع أولاً"); return; }
-  if(progressTimer){ clearInterval(progressTimer); progressTimer = null; }
-  currentJobId = null; lastReport = null;
-  $("out").innerHTML = `<div class="card INFO"><h2>⏳ Scan Starting...</h2><p><b>Target:</b> ${esc(target)}</p><p><b>Profile:</b> ${esc(profile)}</p><div class="progress-wrap"><div id="progressBar" class="progress-bar">0%</div></div><div class="queue-info"><p><b>Status:</b><br><span id="queueStatus">starting</span></p><p><b>Queue Position:</b><br><span id="queuePosition">-</span></p><p><b>Queue Size:</b><br><span id="queueSize">-</span></p><p><b>Step:</b><br><span id="progressStep">Preparing...</span></p></div><button class="btn danger" style="margin-top:14px" onclick="cancelScan()">Cancel Scan</button></div>`;
+
+  if(!target){
+    setStatus("❌ اكتب الموقع أولاً");
+    return;
+  }
+
+  lastReport = null;
+
+  $("out").innerHTML = `
+    <div class="card INFO">
+      <h2>⏳ Scanning...</h2>
+      <p><b>Target:</b> ${esc(target)}</p>
+      <p><b>Profile:</b> ${esc(profile)}</p>
+
+      <div class="progress-wrap">
+        <div class="progress-bar" style="width:100%">
+          Scanning...
+        </div>
+      </div>
+    </div>
+  `;
+
   try{
-    const res = await fetch(API + "/scan-async", {method:"POST",headers:{"Content-Type":"application/json","Authorization":"Bearer " + token},body:JSON.stringify({target, profile})});
+    const res = await fetch(API + "/scan", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":"Bearer " + token
+      },
+      body:JSON.stringify({
+        target,
+        profile
+      })
+    });
+
     const data = await res.json().catch(()=>({}));
-    if(!res.ok){ showError(data.detail || "Scan failed"); return; }
-    currentJobId = data.job_id; updateQueueUI(data); pollScanStatus(data.job_id); setStatus("🔄 Scan running...");
-  }catch(e){ showError("Cannot connect to backend"); }
+
+    if(!res.ok){
+      showError(data.detail || "Scan failed");
+      return;
+    }
+
+    setStatus("✅ Scan completed");
+    showResult(data);
+
+  }catch(e){
+    showError("Cannot connect to backend");
+  }
 }
 
 function updateQueueUI(job){
