@@ -6,75 +6,276 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <style>
 :root{
-  --bg:#020617;--panel:#0f172a;--panel2:#111827;--card:#1e293b;--muted:#94a3b8;--text:#f8fafc;
-  --border:#334155;--brand:#38bdf8;--brand2:#0ea5e9;--green:#22c55e;--yellow:#f59e0b;--red:#ef4444;--critical:#dc2626;
+  --bg:#020617;
+  --bg2:#07111f;
+  --panel:#0f172a;
+  --panel2:#111827;
+  --card:#1e293b;
+  --muted:#94a3b8;
+  --text:#f8fafc;
+  --border:#334155;
+  --brand:#38bdf8;
+  --brand2:#0ea5e9;
+  --green:#22c55e;
+  --yellow:#f59e0b;
+  --red:#ef4444;
+  --critical:#dc2626;
+  --purple:#a855f7;
 }
-*{box-sizing:border-box} html{scroll-behavior:smooth}
-body{margin:0;font-family:Arial,Helvetica,sans-serif;background:radial-gradient(circle at top,#1e3a8a33,transparent 35%),var(--bg);color:var(--text)}
-a{color:var(--brand);text-decoration:none;word-break:break-word} hr{border:0;border-top:1px solid var(--border);margin:22px 0}
-.app{max-width:1180px;margin:auto;padding:22px}.hero{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:20px}
-.logo h1{margin:0;font-size:34px}.logo p{margin:8px 0 0;color:var(--muted)}.badge{display:inline-flex;align-items:center;gap:8px;background:#082f49;border:1px solid #075985;padding:10px 14px;border-radius:999px;color:#bae6fd;font-weight:bold}
-.grid{display:grid;grid-template-columns:380px 1fr;gap:18px}.panel{background:linear-gradient(180deg,#0f172a,#111827);border:1px solid var(--border);border-radius:18px;padding:18px;box-shadow:0 18px 45px #00000040}.panel h2,.panel h3{margin-top:0}
-.tabs{display:flex;gap:8px;margin-bottom:14px}.tab{flex:1;background:#020617;border:1px solid var(--border);color:var(--text);padding:11px;border-radius:12px;cursor:pointer}.tab.active{background:var(--brand);color:#082f49;border-color:var(--brand);font-weight:bold}
-.form-section{display:none}.form-section.active{display:block}.auth-only{display:block}.app-only{display:none}.field{margin:10px 0}.field label{display:block;color:#cbd5e1;margin-bottom:6px;font-size:14px}input,select{width:100%;padding:13px 14px;border-radius:12px;border:1px solid var(--border);outline:none;background:#020617;color:var(--text);font-size:15px}input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 3px #38bdf833}
-.actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.btn{border:0;border-radius:12px;padding:12px 14px;font-weight:bold;cursor:pointer;background:var(--brand);color:#082f49;transition:.2s}.btn:hover{transform:translateY(-1px);filter:brightness(1.08)}.btn.secondary{background:#334155;color:#e2e8f0}.btn.danger{background:var(--red);color:#fff}.btn.green{background:var(--green);color:#052e16}.btn.full{grid-column:1/-1}.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.statusline{margin-top:14px;padding:12px;border-radius:12px;background:#020617;border:1px solid var(--border);color:#cbd5e1}.mini{font-size:13px;color:var(--muted);line-height:1.6}.out{min-height:300px}.empty{height:100%;min-height:320px;border:1px dashed var(--border);border-radius:18px;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);padding:20px;background:#02061766}
-.card{background:var(--card);padding:18px;margin-top:15px;border-radius:16px;border:1px solid var(--border);border-left:6px solid var(--brand)}.LOW{border-left-color:var(--green)}.MEDIUM{border-left-color:var(--yellow)}.HIGH{border-left-color:var(--red)}.CRITICAL{border-left-color:var(--critical)}.UNKNOWN{border-left-color:var(--muted)}.INFO{border-left-color:var(--brand)}
-.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:12px;margin:15px 0}.summary-box{background:#020617;border:1px solid var(--border);padding:15px;border-radius:14px;text-align:center}.summary-box h3{margin:0;font-size:13px;color:#cbd5e1}.summary-box p{font-size:24px;font-weight:bold;margin:8px 0 0}.finding,.cve,.nikto{background:#020617;padding:14px;margin:10px 0;border-radius:12px;border:1px solid var(--border);border-left:4px solid var(--brand);overflow-wrap:anywhere}.screenshot-img{max-width:100%;border-radius:14px;margin-top:12px;border:2px solid var(--border)}
-.progress-wrap{background:#020617;border:1px solid var(--border);border-radius:999px;overflow:hidden;height:25px;margin:15px 0}.progress-bar{background:linear-gradient(90deg,var(--brand),#22c55e);height:100%;width:0%;text-align:center;color:#082f49;font-weight:bold;transition:width .35s ease;line-height:23px}.queue-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;background:#020617;padding:12px;border-radius:14px;border:1px solid var(--border);margin-top:12px}.queue-info p{margin:0;color:#cbd5e1}.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#020617;border:1px solid var(--border);color:#cbd5e1;font-size:12px}.history-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;background:#020617;border:1px solid var(--border);border-radius:12px;padding:12px;margin:10px 0}
-@media(max-width:900px){.grid{grid-template-columns:1fr}.hero{display:block}.badge{margin-top:12px}.actions{grid-template-columns:1fr}.app{padding:12px}.logo h1{font-size:27px}.summary-grid{grid-template-columns:1fr 1fr}}@media(max-width:430px){.summary-grid{grid-template-columns:1fr}.tabs{flex-direction:column}}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  font-family:Inter,Arial,Helvetica,sans-serif;
+  background:
+    radial-gradient(circle at 15% 0%,#0ea5e955,transparent 28%),
+    radial-gradient(circle at 85% 8%,#a855f733,transparent 25%),
+    linear-gradient(135deg,#020617,#07111f 45%,#0f172a);
+  color:var(--text);
+  min-height:100vh;
+}
+a{color:var(--brand);text-decoration:none;word-break:break-word}
+button,input,select{font-family:inherit}
+.app{max-width:1240px;margin:auto;padding:22px}
+.topbar{
+  position:sticky;top:0;z-index:50;
+  backdrop-filter:blur(18px);
+  background:rgba(2,6,23,.76);
+  border-bottom:1px solid rgba(51,65,85,.7);
+}
+.nav{
+  max-width:1240px;margin:auto;padding:14px 22px;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:12px}
+.logo-icon{
+  width:44px;height:44px;border-radius:14px;
+  display:grid;place-items:center;
+  background:linear-gradient(135deg,var(--brand),var(--purple));
+  box-shadow:0 0 28px #38bdf855;
+  color:#020617;font-size:23px;font-weight:900;
+}
+.brand h1{font-size:20px;margin:0}
+.brand span{display:block;color:var(--muted);font-size:12px;margin-top:3px}
+.nav-actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:#082f49;border:1px solid #075985;
+  padding:9px 12px;border-radius:999px;color:#bae6fd;font-weight:800;font-size:13px
+}
+.btn{
+  border:0;border-radius:13px;padding:12px 15px;font-weight:800;cursor:pointer;
+  background:linear-gradient(135deg,var(--brand),var(--brand2));color:#082f49;
+  transition:.2s;box-shadow:0 10px 22px rgba(14,165,233,.18)
+}
+.btn:hover{transform:translateY(-1px);filter:brightness(1.08)}
+.btn.secondary{background:#334155;color:#e2e8f0;box-shadow:none}
+.btn.danger{background:var(--red);color:#fff}
+.btn.green{background:var(--green);color:#052e16}
+.btn.ghost{background:transparent;border:1px solid var(--border);color:#e2e8f0;box-shadow:none}
+.btn.full{width:100%}
+.btn:disabled{opacity:.55;cursor:not-allowed;transform:none}
+.hero{
+  padding:44px 0 28px;
+  display:grid;grid-template-columns:1.1fr .9fr;gap:24px;align-items:center;
+}
+.hero-card{
+  padding:30px;border-radius:28px;
+  background:linear-gradient(180deg,rgba(15,23,42,.88),rgba(17,24,39,.88));
+  border:1px solid rgba(51,65,85,.9);
+  box-shadow:0 24px 70px rgba(0,0,0,.35);
+}
+.kicker{
+  display:inline-flex;gap:8px;align-items:center;
+  color:#bae6fd;background:#082f49;border:1px solid #075985;
+  padding:8px 12px;border-radius:999px;font-size:13px;font-weight:800;
+}
+.hero h2{font-size:48px;line-height:1.04;margin:18px 0 14px;letter-spacing:-1.3px}
+.hero p{color:#cbd5e1;font-size:16px;line-height:1.75;margin:0}
+.hero-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:20px}
+.stat{
+  background:#020617;border:1px solid var(--border);border-radius:16px;padding:14px;text-align:center
+}
+.stat b{font-size:22px;display:block}
+.stat span{font-size:12px;color:var(--muted)}
+.auth-card{
+  border-radius:28px;padding:22px;
+  background:rgba(15,23,42,.92);
+  border:1px solid var(--border);
+  box-shadow:0 22px 65px rgba(0,0,0,.32);
+}
+.tabs{display:flex;gap:8px;margin-bottom:16px;background:#020617;padding:6px;border-radius:16px;border:1px solid var(--border)}
+.tab{flex:1;background:transparent;border:0;color:var(--muted);padding:12px;border-radius:12px;cursor:pointer;font-weight:900}
+.tab.active{background:var(--brand);color:#082f49}
+.form-section{display:none}.form-section.active{display:block}
+.field{margin:12px 0}.field label{display:block;color:#cbd5e1;margin-bottom:7px;font-size:14px;font-weight:700}
+input,select{
+  width:100%;padding:14px 14px;border-radius:14px;border:1px solid var(--border);
+  outline:none;background:#020617;color:var(--text);font-size:15px
+}
+input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 4px #38bdf830}
+.statusline{
+  margin-top:14px;padding:13px;border-radius:14px;background:#020617;border:1px solid var(--border);
+  color:#cbd5e1;line-height:1.55
+}
+.scanner-shell{display:none;padding:20px 0 38px}
+.workspace{display:grid;grid-template-columns:390px 1fr;gap:18px}
+.panel{
+  background:linear-gradient(180deg,rgba(15,23,42,.96),rgba(17,24,39,.96));
+  border:1px solid var(--border);border-radius:24px;padding:18px;
+  box-shadow:0 18px 45px #00000040
+}
+.panel h2,.panel h3{margin-top:0}
+.scan-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.out{min-height:420px}
+.empty{
+  min-height:420px;border:1px dashed var(--border);border-radius:22px;
+  display:flex;align-items:center;justify-content:center;text-align:center;color:var(--muted);
+  padding:20px;background:#02061780
+}
+.empty h2{color:#e2e8f0;margin:0 0 8px}
+.card{
+  background:var(--card);padding:18px;margin-top:15px;border-radius:18px;
+  border:1px solid var(--border);border-left:6px solid var(--brand)
+}
+.LOW{border-left-color:var(--green)}.MEDIUM{border-left-color:var(--yellow)}
+.HIGH{border-left-color:var(--red)}.CRITICAL{border-left-color:var(--critical)}
+.UNKNOWN{border-left-color:var(--muted)}.INFO{border-left-color:var(--brand)}
+.summary-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:12px;margin:15px 0}
+.summary-box{background:#020617;border:1px solid var(--border);padding:15px;border-radius:14px;text-align:center}
+.summary-box h3{margin:0;font-size:13px;color:#cbd5e1}
+.summary-box p{font-size:24px;font-weight:900;margin:8px 0 0}
+.finding,.cve,.nikto{
+  background:#020617;padding:14px;margin:10px 0;border-radius:13px;
+  border:1px solid var(--border);border-left:4px solid var(--brand);overflow-wrap:anywhere
+}
+.screenshot-img{max-width:100%;border-radius:14px;margin-top:12px;border:2px solid var(--border)}
+.progress-wrap{background:#020617;border:1px solid var(--border);border-radius:999px;overflow:hidden;height:25px;margin:15px 0}
+.progress-bar{background:linear-gradient(90deg,var(--brand),#22c55e);height:100%;width:0%;text-align:center;color:#082f49;font-weight:900;transition:width .35s ease;line-height:23px}
+.queue-info{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:10px;background:#020617;padding:12px;border-radius:14px;border:1px solid var(--border);margin-top:12px}
+.queue-info p{margin:0;color:#cbd5e1}
+.section-title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.pill{display:inline-block;padding:5px 9px;border-radius:999px;background:#020617;border:1px solid var(--border);color:#cbd5e1;font-size:12px}
+.history-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;background:#020617;border:1px solid var(--border);border-radius:12px;padding:12px;margin:10px 0}
+.mini{font-size:13px;color:var(--muted);line-height:1.6}
+.feature-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin:20px 0}
+.feature{
+  padding:16px;border-radius:18px;background:#020617a6;border:1px solid var(--border)
+}
+.feature b{display:block;margin-bottom:6px}
+.feature span{color:var(--muted);font-size:13px;line-height:1.55}
+@media(max-width:980px){
+  .hero{grid-template-columns:1fr}.workspace{grid-template-columns:1fr}
+  .hero h2{font-size:38px}.feature-grid{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+  .app,.nav{padding-left:12px;padding-right:12px}
+  .hero h2{font-size:31px}.hero-stats{grid-template-columns:1fr}
+  .scan-actions{grid-template-columns:1fr}.summary-grid{grid-template-columns:1fr}
+  .history-row{grid-template-columns:1fr}.nav-actions{width:100%}.nav-actions .btn,.badge{flex:1;justify-content:center}
+}
 </style>
 </head>
 <body>
-<div class="app">
-  <header class="hero">
-    <div class="logo"><h1>🛡️ Threat Scanner</h1><p>Professional web security scan dashboard</p></div>
-    <div class="badge" id="loginBadge">🔐 Not logged in</div>
-  </header>
+<div class="topbar">
+  <div class="nav">
+    <div class="brand">
+      <div class="logo-icon">🛡️</div>
+      <div>
+        <h1>Threat Scanner SaaS</h1>
+        <span>Realistic web security analysis</span>
+      </div>
+    </div>
+    <div class="nav-actions">
+      <div class="badge" id="loginBadge">🔐 Not logged in</div>
+      <button class="btn ghost" onclick="scrollToAuth()">Login</button>
+      <button class="btn danger" onclick="logout()">Logout</button>
+    </div>
+  </div>
+</div>
 
-  <main class="grid">
-    <aside class="panel">
+<div class="app">
+  <section class="hero" id="authArea">
+    <div class="hero-card">
+      <div class="kicker">⚡ Defensive Security Scanner</div>
+      <h2>Scan websites with clearer evidence, confidence, and fix plans.</h2>
+      <p>
+        Analyze SSL/TLS, DNS, WAF, security headers, ports, CVEs, exposed paths,
+        JavaScript secrets, API endpoints, and prioritized remediation actions.
+      </p>
+      <div class="hero-stats">
+        <div class="stat"><b>SSL</b><span>TLS & certificates</span></div>
+        <div class="stat"><b>CVE</b><span>Technology mapping</span></div>
+        <div class="stat"><b>Fix</b><span>Prioritized plan</span></div>
+      </div>
+      <div class="feature-grid">
+        <div class="feature"><b>🎯 Evidence-based</b><span>Findings show evidence and confidence, reducing false positives.</span></div>
+        <div class="feature"><b>🧬 CVE Review</b><span>Maps visible technologies to known public vulnerability references.</span></div>
+        <div class="feature"><b>📋 Fix Plan</b><span>Prioritized actions help you solve the most important issues first.</span></div>
+      </div>
+    </div>
+
+    <div class="auth-card">
       <div class="tabs">
         <button class="tab active" onclick="switchTab('login')">Login</button>
         <button class="tab" onclick="switchTab('register')">Register</button>
       </div>
 
       <section id="loginBox" class="form-section active">
-        <h2>Login</h2>
+        <h2>Welcome back</h2>
+        <p class="mini">Login to unlock the scanner dashboard.</p>
         <div class="field"><label>Username</label><input id="user" placeholder="username" autocomplete="username"></div>
         <div class="field"><label>Password</label><input id="pass" type="password" placeholder="password" autocomplete="current-password"></div>
         <button class="btn full" onclick="login()">Login</button>
       </section>
 
       <section id="registerBox" class="form-section">
-        <h2>Create Account</h2>
+        <h2>Create account</h2>
+        <p class="mini">Register first, then login to start scanning.</p>
         <div class="field"><label>Username</label><input id="r_user" placeholder="username" autocomplete="username"></div>
         <div class="field"><label>Password</label><input id="r_pass" type="password" placeholder="password" autocomplete="new-password"></div>
         <button class="btn green full" onclick="register()">Register</button>
       </section>
 
-      <div id="appControls" class="app-only">
-      <hr>
-      <h2>Scan Target</h2>
-      <div class="field"><label>Target domain or URL</label><input id="t" placeholder="example.com or https://example.com"></div>
-      <div class="field"><label>Scan profile</label><select id="scan_profile"><option value="quick">⚡ Quick Scan</option><option value="full" selected>🛡️ Full Scan</option><option value="deep">🔥 Deep Scan</option></select></div>
-      <div class="actions">
-        <button class="btn full" onclick="scan()">🚀 Start Scan</button>
-        <button class="btn secondary" onclick="captureScreenshot()">📸 Screenshot</button>
-        <button class="btn secondary" onclick="loadHistory()">📜 History</button>
-        <button class="btn secondary" onclick="downloadReport()">JSON</button>
-        <button class="btn secondary" onclick="downloadPDF()">PDF</button>
-        <button class="btn danger" onclick="logout()">Logout</button>
-      </div>
       <div class="statusline" id="statusBox">Ready. Login first, then run a scan.</div>
       <p class="mini">Backend API: <span id="apiText"></span></p>
-      </div>
-    </aside>
+    </div>
+  </section>
 
-    <section class="panel out" id="out">
-      <div class="empty" id="welcomeBox"><div><h2>🔐 Login Required</h2><p>Please login or create an account to start scanning.</p></div></div>
-    </section>
-  </main>
+  <section class="scanner-shell" id="scannerShell">
+    <main class="workspace">
+      <aside class="panel">
+        <h2>🚀 New Scan</h2>
+        <p class="mini">Only scan websites you own or have permission to test.</p>
+        <div class="field"><label>Target domain or URL</label><input id="t" placeholder="example.com or https://example.com"></div>
+        <div class="field">
+          <label>Scan profile</label>
+          <select id="scan_profile">
+            <option value="quick">⚡ Quick Scan</option>
+            <option value="full" selected>🛡️ Full Scan</option>
+            <option value="deep">🔥 Deep Scan</option>
+          </select>
+        </div>
+        <div class="scan-actions">
+          <button class="btn full" onclick="scan()">Start Scan</button>
+          <button class="btn secondary" onclick="captureScreenshot()">Screenshot</button>
+          <button class="btn secondary" onclick="loadHistory()">History</button>
+          <button class="btn secondary" onclick="downloadReport()">JSON</button>
+          <button class="btn secondary" onclick="downloadPDF()">PDF</button>
+          <a class="btn secondary" href="dashboard.html">Dashboard</a>
+        </div>
+      </aside>
+
+      <section class="panel out" id="out">
+        <div class="empty">
+          <div>
+            <h2>🔎 Ready to Scan</h2>
+            <p>Enter a target to start security analysis.</p>
+          </div>
+        </div>
+      </section>
+    </main>
+  </section>
 </div>
 
 <script>
@@ -90,6 +291,7 @@ function $(id){ return document.getElementById(id); }
 function setStatus(msg){ $("statusBox").innerHTML = msg; }
 function esc(value){ return String(value ?? "").replace(/[&<>'"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[c])); }
 function val(id){ return $(id).value.trim(); }
+function scrollToAuth(){ document.getElementById("authArea").scrollIntoView({behavior:"smooth"}); }
 
 function switchTab(tab){
   document.querySelectorAll('.tab').forEach(b=>b.classList.remove('active'));
@@ -105,35 +307,12 @@ function updateAuthUI(){
   const token = localStorage.getItem("token");
   $("loginBadge").innerText = token ? "✅ Logged in" : "🔐 Not logged in";
 
-  const appControls = $("appControls");
-  const out = $("out");
-
   if(token){
-    if(appControls) appControls.style.display = "block";
-
-    if(out && out.innerHTML.includes("Login Required")){
-      out.innerHTML = `
-        <div class="empty">
-          <div>
-            <h2>🔎 Ready to Scan</h2>
-            <p>Enter a target to start SSL, DNS, WAF, CVE, ports, headers, subdomains, and findings analysis.</p>
-          </div>
-        </div>
-      `;
-    }
+    $("scannerShell").style.display = "block";
+    $("authArea").style.display = "none";
   }else{
-    if(appControls) appControls.style.display = "none";
-
-    if(out){
-      out.innerHTML = `
-        <div class="empty">
-          <div>
-            <h2>🔐 Login Required</h2>
-            <p>Please login or create an account to start scanning.</p>
-          </div>
-        </div>
-      `;
-    }
+    $("scannerShell").style.display = "none";
+    $("authArea").style.display = "grid";
   }
 }
 
@@ -154,14 +333,17 @@ async function login(){
   try{
     const res = await fetch(API + "/login", {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username,password})});
     const data = await res.json().catch(()=>({}));
-    if(data.access_token){ localStorage.setItem("token", data.access_token); setStatus("✅ Logged in successfully"); updateAuthUI(); }
-    else setStatus("❌ " + esc(data.detail || "Login failed"));
+    if(data.access_token){
+      localStorage.setItem("token", data.access_token);
+      setStatus("✅ Logged in successfully");
+      updateAuthUI();
+    }else setStatus("❌ " + esc(data.detail || "Login failed"));
   }catch(e){ setStatus("❌ Cannot connect to backend"); }
 }
 
 function requireToken(){
   const token = localStorage.getItem("token");
-  if(!token){ setStatus("❌ لازم تسجل دخول أولاً"); return null; }
+  if(!token){ setStatus("❌ لازم تسجل دخول أولاً"); updateAuthUI(); return null; }
   return token;
 }
 
@@ -228,13 +410,17 @@ function showResult(data){
   const count = sev => vulns.filter(v => v.severity === sev).length;
   const cveCount = cveGroups.reduce((sum,g)=>sum + (g.cves ? g.cves.length : 0),0);
   const openPorts = data.open_ports?.length ? data.open_ports.map(p => typeof p === "object" ? `<div class="finding ${p.risk === "RISKY" ? "MEDIUM" : "INFO"}"><p><b>Port:</b> ${esc(p.port)}</p><p><b>Service:</b> ${esc(p.service || "Unknown")}</p><p><b>Risk:</b> ${esc(p.risk || "NORMAL")}</p><p><b>Banner:</b> ${esc(p.banner || "-")}</p></div>` : `<p>${esc(p)}</p>`).join("") : "<p>None</p>";
-  const vulnerabilityChecks = vulns.length ? vulns.map(v => `<div class="finding ${esc(v.severity || 'UNKNOWN')}"><h4>🧨 ${esc(v.name)}</h4><p><b>Severity:</b> ${esc(v.severity)}</p><p><b>Evidence:</b> ${esc(v.evidence)}</p><p><b>Impact:</b> ${esc(v.impact)}</p><p><b>Fix:</b> ${esc(v.fix)}</p></div>`).join("") : "<p>✅ No confirmed vulnerability indicators detected</p>";
+  const vulnerabilityChecks = vulns.length ? vulns.map(v => `<div class="finding ${esc(v.severity || 'UNKNOWN')}"><h4>🧨 ${esc(v.name)}</h4><p><b>Severity:</b> ${esc(v.severity)}</p><p><b>Confidence:</b> ${esc(v.confidence || "MEDIUM")}</p><p><b>Evidence Type:</b> ${esc(v.evidence_type || "generic")}</p><p><b>Evidence:</b> ${esc(v.evidence)}</p><p><b>Impact:</b> ${esc(v.impact)}</p><p><b>Fix:</b> ${esc(v.fix)}</p></div>`).join("") : "<p>✅ No confirmed vulnerability indicators detected</p>";
   const niktoResults = niktoChecks.length ? niktoChecks.map(n => `<div class="nikto ${esc(n.severity || 'INFO')}"><h4>🧪 ${esc(n.name)}</h4><p><b>Severity:</b> ${esc(n.severity)}</p><p><b>Path:</b> ${esc(n.path)}</p><p><b>Status:</b> ${esc(n.status)}</p><p><b>URL:</b> <a href="${esc(n.url)}" target="_blank">${esc(n.url)}</a></p><p><b>Evidence:</b> ${esc(n.evidence)}</p><p><b>Fix:</b> ${esc(n.fix)}</p></div>`).join("") : "<p>✅ No Nikto-like exposed paths detected</p>";
-  const findings = data.findings?.length ? data.findings.map(f => `<div class="finding ${esc(f.severity || 'INFO')}"><h4>🕳️ ${esc(f.title)}</h4><p><b>Severity:</b> ${esc(f.severity)}</p><p><b>Description:</b> ${esc(f.description)}</p><p><b>Fix:</b> ${esc(f.fix)}</p></div>`).join("") : "<p>✅ No major findings detected</p>";
+  const findings = data.findings?.length ? data.findings.map(f => `<div class="finding ${esc(f.severity || 'INFO')}"><h4>🕳️ ${esc(f.title)}</h4><p><b>Severity:</b> ${esc(f.severity)}</p><p><b>Confidence:</b> ${esc(f.confidence || "MEDIUM")}</p><p><b>Description:</b> ${esc(f.description)}</p><p><b>Fix:</b> ${esc(f.fix)}</p></div>`).join("") : "<p>✅ No major findings detected</p>";
   const subdomains = data.subdomains?.length ? data.subdomains.map(s => `<div class="finding"><p><b>Subdomain:</b> ${esc(s.subdomain)}</p><p><b>IPs:</b> ${safeList(s.ips)}</p><p><b>HTTPS:</b> ${s.https ? "✅ Yes" : "❌ No"}</p><p><b>HTTP:</b> ${s.http ? "✅ Yes" : "❌ No"}</p><p><b>Status:</b> ${esc(s.status_code || "Unknown")}</p><p><b>Final URL:</b> ${esc(s.final_url || "N/A")}</p></div>`).join("") : "<p>No common subdomains found</p>";
   const cveResults = cveGroups.length ? cveGroups.map(group => `<div class="finding"><h4>🧩 Technology: ${esc(group.technology)}</h4>${group.cves && group.cves.length ? group.cves.map(cve => `<div class="cve ${esc(cve.severity || "UNKNOWN")}"><h4>🚨 ${esc(cve.id)}</h4><p><b>Severity:</b> ${esc(cve.severity || "UNKNOWN")}</p><p><b>CVSS Score:</b> ${esc(cve.score || "N/A")}</p><p><b>Published:</b> ${esc(cve.published || "Unknown")}</p><p><b>Description:</b> ${esc(cve.description || "No description")}</p><p><b>Reference:</b> <a href="${esc(cve.url)}" target="_blank">Open NVD Details</a></p></div>`).join("") : "<p>✅ No CVEs found for this technology</p>"}</div>`).join("") : "<p>No CVE results available</p>";
-  const whoisAsn = data.whois_asn ? `<div class="finding INFO"><p><b>IP:</b> ${esc(data.whois_asn.ip || "Unknown")}</p><p><b>ASN:</b> ${esc(data.whois_asn.asn || "Unknown")}</p><p><b>Organization:</b> ${esc(data.whois_asn.organization || "Unknown")}</p><p><b>ISP:</b> ${esc(data.whois_asn.isp || "Unknown")}</p><p><b>Country:</b> ${esc(data.whois_asn.country || "Unknown")}</p><p><b>Region/City:</b> ${esc((data.whois_asn.region || "Unknown") + " / " + (data.whois_asn.city || "Unknown"))}</p><p><b>Reverse DNS:</b> ${esc(data.whois_asn.reverse_dns || "None")}</p><p><b>Network Range:</b> ${esc(data.whois_asn.network_range || "Unknown")}</p></div>` : "<p>No Whois / ASN data available</p>";
-  $("out").innerHTML = `<div class="card ${esc(data.risk || 'UNKNOWN')}"><div class="section-title"><h2>🛡️ Scan Result</h2><span class="pill">${esc(data.profile || "full")}</span></div><div class="summary-grid"><div class="summary-box"><h3>Risk</h3><p>${esc(data.risk || 'UNKNOWN')}</p></div><div class="summary-box"><h3>Score</h3><p>${esc(data.score ?? 'N/A')}/100</p></div><div class="summary-box"><h3>Total Vulns</h3><p>${vulns.length}</p></div><div class="summary-box"><h3>Nikto</h3><p>${niktoChecks.length}</p></div><div class="summary-box"><h3>Critical</h3><p>${count('CRITICAL')}</p></div><div class="summary-box"><h3>High</h3><p>${count('HIGH')}</p></div><div class="summary-box"><h3>Medium</h3><p>${count('MEDIUM')}</p></div><div class="summary-box"><h3>Low</h3><p>${count('LOW')}</p></div><div class="summary-box"><h3>CVEs</h3><p>${cveCount}</p></div><div class="summary-box"><h3>Subdomains</h3><p>${data.subdomains?.length || 0}</p></div></div><h3>🌐 Target Information</h3><p><b>Target:</b> ${esc(data.target)}</p><p><b>Host:</b> ${esc(data.host)}</p><p><b>IP:</b> ${esc(data.ip)}</p><p><b>Final URL:</b> ${esc(data.final_url || "N/A")}</p><p><b>HTTP Status:</b> ${esc(data.status_code)}</p><hr><h3>🧨 Vulnerability Checks</h3>${vulnerabilityChecks}<hr><h3>🧪 Nikto-like Checks</h3>${niktoResults}<hr><h3>🔒 SSL / TLS</h3><p><b>SSL Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p><p><b>SSL Expiration:</b> ${esc(data.ssl?.info || "Unknown")}</p><p><b>TLS Version:</b> ${esc(data.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(data.ssl?.cipher_name || "Unknown")} / ${esc(data.ssl?.cipher_bits || "Unknown")} bits</p><p><b>Certificate Subject:</b> ${formatObject(data.ssl?.subject)}</p><p><b>Certificate Issuer:</b> ${formatObject(data.ssl?.issuer)}</p><hr><h3>🌐 DNS Security</h3><p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p><p><b>MX Records:</b> ${safeList(data.dns_security?.mx_records)}</p><p><b>NS Records:</b> ${safeList(data.dns_security?.ns_records)}</p><p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p><p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p><p><b>DNS Issues:</b> ${safeList(data.dns_security?.issues,"No DNS issues")}</p><hr><h3>🏢 Whois / ASN</h3>${whoisAsn}<hr><h3>🤖 Robots.txt</h3><p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>Summary:</b> ${esc(data.robots_txt?.summary || "Unknown")}</p><p><b>Suspicious Entries:</b> ${safeList(data.robots_txt?.suspicious_entries)}</p><hr><h3>🛡️ Security.txt</h3><p><b>Exists:</b> ${data.security_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>URL:</b> ${esc(data.security_txt?.url || "N/A")}</p><p><b>Contacts:</b> ${safeList(data.security_txt?.contacts)}</p><p><b>Policy:</b> ${esc(data.security_txt?.policy || "None")}</p><hr><h3>🌍 Subdomains Discovered</h3>${subdomains}<hr><h3>🧠 Detected Technologies</h3><p>${safeList(data.technologies,"Unknown")}</p><hr><h3>🧬 CVE Results</h3>${cveResults}<hr><h3>🛡️ WAF Detection</h3><div class="finding INFO"><p><b>Name:</b> ${esc(data.waf?.name || data.waf || "Unknown")}</p><p><b>Confidence:</b> ${esc(data.waf?.confidence || "0%")}</p><p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p></div><hr><h3>🔁 HTTP Methods</h3><p>${safeList(data.http_methods,"Unknown")}</p><hr><h3>🚪 Open Ports</h3>${openPorts}<hr><h3>🧱 Security Headers</h3><p>✅ <b>Found:</b> ${safeList(data.security_headers?.found)}</p><p>❌ <b>Missing:</b> ${safeList(data.security_headers?.missing)}</p><hr><h3>📋 Findings & Fixes</h3>${findings}</div>`;
+  const jsSecrets = data.js_secrets?.length ? data.js_secrets.map(s => `<div class="finding ${esc(s.severity || "INFO")}"><p><b>Type:</b> ${esc(s.type)}</p><p><b>Severity:</b> ${esc(s.severity)}</p><p><b>Evidence:</b> ${esc(s.evidence)}</p><p><b>URL:</b> ${esc(s.url)}</p><p><b>Fix:</b> ${esc(s.fix)}</p></div>`).join("") : "<p>No JavaScript secrets detected</p>";
+  const apiEndpoints = data.api_endpoints?.length ? data.api_endpoints.map(e => `<div class="finding ${esc(e.severity || "INFO")}"><p><b>Endpoint:</b> ${esc(e.endpoint)}</p><p><b>Severity:</b> ${esc(e.severity)}</p></div>`).join("") : "<p>No API endpoints discovered</p>";
+  const fixPlan = data.remediation_plan?.top_issues?.length ? data.remediation_plan.top_issues.map(i => `<div class="finding ${esc(i.severity || "INFO")}"><p><b>${esc(i.title)}</b></p><p><b>Severity:</b> ${esc(i.severity)}</p><p><b>Category:</b> ${esc(i.category)}</p><p><b>Fix:</b> ${esc(i.fix)}</p></div>`).join("") : "<p>No prioritized fixes available</p>";
+  const whoisAsn = data.whois_asn ? `<div class="finding INFO"><p><b>IP:</b> ${esc(data.whois_asn.ip || "Unknown")}</p><p><b>ASN:</b> ${esc(data.whois_asn.asn || "Unknown")}</p><p><b>Organization:</b> ${esc(data.whois_asn.organization || "Unknown")}</p><p><b>ISP:</b> ${esc(data.whois_asn.isp || "Unknown")}</p><p><b>Country:</b> ${esc(data.whois_asn.country || "Unknown")}</p></div>` : "<p>No Whois / ASN data available</p>";
+
+  $("out").innerHTML = `<div class="card ${esc(data.risk || 'UNKNOWN')}"><div class="section-title"><h2>🛡️ Scan Result</h2><span class="pill">${esc(data.profile || "full")}</span></div><div class="summary-grid"><div class="summary-box"><h3>Risk</h3><p>${esc(data.risk || 'UNKNOWN')}</p></div><div class="summary-box"><h3>Score</h3><p>${esc(data.score ?? 'N/A')}/100</p></div><div class="summary-box"><h3>Total Vulns</h3><p>${vulns.length}</p></div><div class="summary-box"><h3>Nikto</h3><p>${niktoChecks.length}</p></div><div class="summary-box"><h3>Critical</h3><p>${count('CRITICAL')}</p></div><div class="summary-box"><h3>High</h3><p>${count('HIGH')}</p></div><div class="summary-box"><h3>Medium</h3><p>${count('MEDIUM')}</p></div><div class="summary-box"><h3>Low</h3><p>${count('LOW')}</p></div><div class="summary-box"><h3>CVEs</h3><p>${cveCount}</p></div><div class="summary-box"><h3>Subdomains</h3><p>${data.subdomains?.length || 0}</p></div></div><h3>🌐 Target Information</h3><p><b>Target:</b> ${esc(data.target)}</p><p><b>Host:</b> ${esc(data.host)}</p><p><b>IP:</b> ${esc(data.ip)}</p><p><b>Final URL:</b> ${esc(data.final_url || "N/A")}</p><p><b>HTTP Status:</b> ${esc(data.status_code)}</p><hr><h3>📋 Priority Fix Plan</h3>${fixPlan}<hr><h3>🧨 Vulnerability Checks</h3>${vulnerabilityChecks}<hr><h3>🔐 JavaScript Secrets</h3>${jsSecrets}<hr><h3>🔎 API Endpoints / Attack Surface</h3>${apiEndpoints}<hr><h3>🧪 Nikto-like Checks</h3>${niktoResults}<hr><h3>🔒 SSL / TLS</h3><p><b>SSL Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p><p><b>SSL Expiration:</b> ${esc(data.ssl?.info || "Unknown")}</p><p><b>TLS Version:</b> ${esc(data.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(data.ssl?.cipher_name || "Unknown")} / ${esc(data.ssl?.cipher_bits || "Unknown")} bits</p><p><b>Certificate Subject:</b> ${formatObject(data.ssl?.subject)}</p><p><b>Certificate Issuer:</b> ${formatObject(data.ssl?.issuer)}</p><hr><h3>🌐 DNS Security</h3><p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p><p><b>MX Records:</b> ${safeList(data.dns_security?.mx_records)}</p><p><b>NS Records:</b> ${safeList(data.dns_security?.ns_records)}</p><p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p><p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p><p><b>DNS Issues:</b> ${safeList(data.dns_security?.issues,"No DNS issues")}</p><hr><h3>🏢 Whois / ASN</h3>${whoisAsn}<hr><h3>🤖 Robots.txt</h3><p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>Summary:</b> ${esc(data.robots_txt?.summary || "Unknown")}</p><p><b>Suspicious Entries:</b> ${safeList(data.robots_txt?.suspicious_entries)}</p><hr><h3>🛡️ Security.txt</h3><p><b>Exists:</b> ${data.security_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>URL:</b> ${esc(data.security_txt?.url || "N/A")}</p><p><b>Contacts:</b> ${safeList(data.security_txt?.contacts)}</p><p><b>Policy:</b> ${esc(data.security_txt?.policy || "None")}</p><hr><h3>🌍 Subdomains Discovered</h3>${subdomains}<hr><h3>🧠 Detected Technologies</h3><p>${safeList(data.technologies,"Unknown")}</p><hr><h3>🧬 CVE Results</h3>${cveResults}<hr><h3>🛡️ WAF Detection</h3><div class="finding INFO"><p><b>Name:</b> ${esc(data.waf?.name || data.waf || "Unknown")}</p><p><b>Confidence:</b> ${esc(data.waf?.confidence || "0%")}</p><p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p></div><hr><h3>🔁 HTTP Methods</h3><p>${safeList(data.http_methods,"Unknown")}</p><hr><h3>🚪 Open Ports</h3>${openPorts}<hr><h3>🧱 Security Headers</h3><p>✅ <b>Found:</b> ${safeList(data.security_headers?.found)}</p><p>❌ <b>Missing:</b> ${safeList(data.security_headers?.missing)}</p><hr><h3>📋 Findings & Fixes</h3>${findings}</div>`;
 }
 
 async function captureScreenshot(){
@@ -249,147 +435,44 @@ async function captureScreenshot(){
 }
 function downloadScreenshot(dataUrl, target){ const a=document.createElement("a"); const safeName=(target || "target").replace(/[^a-z0-9]/gi,"-").toLowerCase(); a.href=dataUrl; a.download=`screenshot-${safeName}.png`; a.click(); }
 function downloadReport(){ if(!lastReport){ setStatus("❌ No report to download"); return; } const blob=new Blob([JSON.stringify(lastReport,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`scan-report-${lastReport.host || "target"}.json`; a.click(); URL.revokeObjectURL(url); }
-function downloadPDF(){ if(!lastReport){ setStatus("❌ No report to export"); return; } const win=window.open("","_blank"); win.document.write(`<html><head><title>Threat Scanner PDF Report</title><style>body{font-family:Arial;padding:30px;color:#111827}.box{border:1px solid #ccc;padding:15px;margin:12px 0;border-radius:8px}</style></head><body><h1>🛡️ Threat Scanner Report</h1><div class="box"><p><b>Target:</b> ${esc(lastReport.target)}</p><p><b>Host:</b> ${esc(lastReport.host)}</p><p><b>Profile:</b> ${esc(lastReport.profile || "full")}</p><p><b>Risk:</b> ${esc(lastReport.risk)}</p><p><b>Score:</b> ${esc(lastReport.score)}/100</p><p><b>Total Vulnerabilities:</b> ${lastReport.vulnerability_checks?.length || 0}</p><p><b>Nikto-like Checks:</b> ${lastReport.nikto_checks?.length || 0}</p><p><b>TLS Version:</b> ${esc(lastReport.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(lastReport.ssl?.cipher_name || "Unknown")}</p><p><b>ASN:</b> ${esc(lastReport.whois_asn?.asn || "Unknown")}</p><p><b>Organization:</b> ${esc(lastReport.whois_asn?.organization || "Unknown")}</p><p><b>Country:</b> ${esc(lastReport.whois_asn?.country || "Unknown")}</p></div><script>window.print();<\/script></body></html>`); win.document.close(); }
-
+function downloadPDF(){ if(!lastReport){ setStatus("❌ No report to export"); return; } const win=window.open("","_blank"); win.document.write(`<html><head><title>Threat Scanner PDF Report</title><style>body{font-family:Arial;padding:30px;color:#111827}.box{border:1px solid #ccc;padding:15px;margin:12px 0;border-radius:8px}</style></head><body><h1>🛡️ Threat Scanner Report</h1><div class="box"><p><b>Target:</b> ${esc(lastReport.target)}</p><p><b>Host:</b> ${esc(lastReport.host)}</p><p><b>Profile:</b> ${esc(lastReport.profile || "full")}</p><p><b>Risk:</b> ${esc(lastReport.risk)}</p><p><b>Score:</b> ${esc(lastReport.score)}/100</p><p><b>Total Vulnerabilities:</b> ${lastReport.vulnerability_checks?.length || 0}</p><p><b>TLS Version:</b> ${esc(lastReport.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(lastReport.ssl?.cipher_name || "Unknown")}</p></div><script>window.print();<\/script></body></html>`); win.document.close(); }
 
 async function loadHistory(){
-  const token = requireToken(); 
-  if(!token) return;
-
-  $("out").innerHTML = `
-    <div class="card INFO">
-      <h2>📜 Loading History...</h2>
-      <p>Please wait...</p>
-    </div>
-  `;
-
+  const token = requireToken(); if(!token) return;
+  $("out").innerHTML = `<div class="card INFO"><h2>📜 Loading History...</h2><p>Please wait...</p></div>`;
   try{
-    const res = await fetch(API + "/history", {
-      headers:{
-        "Authorization":"Bearer " + token
-      }
-    });
-
+    const res = await fetch(API + "/history", {headers:{"Authorization":"Bearer " + token}});
     const data = await res.json().catch(()=>({}));
-
-    if(!res.ok){
-      showError(data.detail || "Could not load history");
-      return;
-    }
-
+    if(!res.ok){ showError(data.detail || "Could not load history"); return; }
     const items = data.data || [];
-
-    if(!items.length){
-      $("out").innerHTML = `
-        <div class="card INFO">
-          <h2>📜 Scan History</h2>
-          <p>No saved scans found.</p>
-        </div>
-      `;
-      return;
-    }
-
-    $("out").innerHTML = `
-      <div class="card INFO">
-        <div class="section-title">
-          <h2>📜 Scan History</h2>
-          <span class="pill">${items.length} scans</span>
-        </div>
-
-        ${items.map(i => `
-          <div class="history-row">
-            <div>
-              <b>${esc(i.target || "Unknown target")}</b><br>
-              <span class="mini">
-                Risk: ${esc(i.risk || "Unknown")} |
-                Score: ${esc(i.score ?? "N/A")}/100 |
-                Date: ${esc(i.created_at || "")}
-              </span>
-            </div>
-
-            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-              <span class="pill">${esc(i.risk || "INFO")}</span>
-              <button class="btn secondary" onclick="viewHistoryReport(${i.id})">
-                View
-              </button>
-              <button class="btn danger" onclick="deleteHistoryScan(${i.id})">
-                Delete
-              </button>
-            </div>
-          </div>
-        `).join("")}
-      </div>
-    `;
-
-  }catch(e){
-    showError("Cannot connect to history endpoint");
-  }
+    if(!items.length){ $("out").innerHTML = `<div class="card INFO"><h2>📜 Scan History</h2><p>No saved scans found.</p></div>`; return; }
+    $("out").innerHTML = `<div class="card INFO"><div class="section-title"><h2>📜 Scan History</h2><span class="pill">${items.length} scans</span></div>${items.map(i => `<div class="history-row"><div><b>${esc(i.target || "Unknown target")}</b><br><span class="mini">Risk: ${esc(i.risk || "Unknown")} | Score: ${esc(i.score ?? "N/A")}/100 | Date: ${esc(i.created_at || "")}</span></div><div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end"><span class="pill">${esc(i.risk || "INFO")}</span><button class="btn secondary" onclick="viewHistoryReport(${i.id})">View</button><button class="btn danger" onclick="deleteHistoryScan(${i.id})">Delete</button></div></div>`).join("")}</div>`;
+  }catch(e){ showError("Cannot connect to history endpoint"); }
 }
-
 
 async function viewHistoryReport(id){
-  const token = requireToken(); 
-  if(!token) return;
-
+  const token = requireToken(); if(!token) return;
   try{
-    const res = await fetch(API + "/history/" + id, {
-      headers:{
-        "Authorization":"Bearer " + token
-      }
-    });
-
+    const res = await fetch(API + "/history/" + id, {headers:{"Authorization":"Bearer " + token}});
     const report = await res.json().catch(()=>({}));
-
-    if(!res.ok){
-      showError(report.detail || "Could not load report");
-      return;
-    }
-
+    if(!res.ok){ showError(report.detail || "Could not load report"); return; }
     showResult(report);
-
-  }catch(e){
-    showError("Cannot load scan report");
-  }
+  }catch(e){ showError("Cannot load scan report"); }
 }
 
-
 async function deleteHistoryScan(id){
-  const token = requireToken(); 
-  if(!token) return;
-
-  if(!confirm("Delete this scan from history?")){
-    return;
-  }
-
+  const token = requireToken(); if(!token) return;
+  if(!confirm("Delete this scan from history?")) return;
   try{
-    const res = await fetch(API + "/history/" + id, {
-      method:"DELETE",
-      headers:{
-        "Authorization":"Bearer " + token
-      }
-    });
-
+    const res = await fetch(API + "/history/" + id, {method:"DELETE",headers:{"Authorization":"Bearer " + token}});
     const data = await res.json().catch(()=>({}));
-
-    if(!res.ok){
-      showError(data.detail || "Could not delete scan");
-      return;
-    }
-
-    setStatus("✅ Scan deleted");
-    loadHistory();
-
-  }catch(e){
-    showError("Cannot delete scan");
-  }
+    if(!res.ok){ showError(data.detail || "Could not delete scan"); return; }
+    setStatus("✅ Scan deleted"); loadHistory();
+  }catch(e){ showError("Cannot delete scan"); }
 }
 
 function logout(){
-  if(progressTimer){
-    clearInterval(progressTimer);
-    progressTimer = null;
-  }
-
+  if(progressTimer){ clearInterval(progressTimer); progressTimer = null; }
   localStorage.removeItem("token");
   currentJobId = null;
   lastReport = null;
