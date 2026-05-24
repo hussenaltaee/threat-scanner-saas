@@ -175,25 +175,49 @@ NIKTO_PATHS = [
 ]
 
 
-def add_finding(findings, title, severity, description, fix, category="General", evidence=None):
+def add_finding(
+    findings,
+    title,
+    severity,
+    description,
+    fix,
+    category="General",
+    evidence=None,
+    confidence="MEDIUM",
+    evidence_type="generic"
+):
     findings.append({
         "title": title,
         "severity": severity,
         "category": category,
         "description": description,
         "evidence": evidence,
-        "fix": fix
+        "fix": fix,
+        "confidence": confidence,
+        "evidence_type": evidence_type
     })
 
 
-def add_vuln(vulns, name, severity, evidence, impact, fix, category="General"):
+def add_vuln(
+    vulns,
+    name,
+    severity,
+    evidence,
+    impact,
+    fix,
+    category="General",
+    confidence="MEDIUM",
+    evidence_type="generic"
+):
     vulns.append({
         "name": name,
         "severity": severity,
         "category": category,
         "evidence": evidence,
         "impact": impact,
-        "fix": fix
+        "fix": fix,
+        "confidence": confidence,
+        "evidence_type": evidence_type
     })
 
 
@@ -1266,7 +1290,9 @@ def build_structured_storage(findings, vulnerability_checks, subdomains, cve_res
             "category": item.get("category", "General"),
             "description": item.get("description"),
             "evidence": item.get("evidence"),
-            "fix": item.get("fix")
+            "fix": item.get("fix"),
+            "confidence": item.get("confidence", "MEDIUM"),
+            "evidence_type": item.get("evidence_type", "generic")
         })
 
     for item in vulnerability_checks:
@@ -1396,6 +1422,47 @@ def explain_score(findings, vulnerabilities, score):
         "risk_drivers": factors[:8],
         "total_vulnerabilities": len(vulnerabilities)
     }
+
+
+
+
+def has_version_info(text):
+    patterns = [
+        r"[0-9]+\.[0-9]+",
+        r"version\s*[0-9]+",
+        r"nginx\/[0-9]",
+        r"apache\/[0-9]",
+        r"php\/[0-9]"
+    ]
+
+    text = str(text or "").lower()
+
+    return any(re.search(p, text) for p in patterns)
+
+
+def calculate_realistic_score(findings):
+    score = 0
+
+    weights = {
+        ("CRITICAL", "HIGH"): 20,
+        ("HIGH", "HIGH"): 15,
+        ("MEDIUM", "HIGH"): 8,
+
+        ("CRITICAL", "MEDIUM"): 12,
+        ("HIGH", "MEDIUM"): 8,
+        ("MEDIUM", "MEDIUM"): 5,
+
+        ("LOW", "HIGH"): 3,
+        ("LOW", "MEDIUM"): 2
+    }
+
+    for item in findings:
+        sev = str(item.get("severity", "INFO")).upper()
+        conf = str(item.get("confidence", "MEDIUM")).upper()
+
+        score += weights.get((sev, conf), 0)
+
+    return min(score, 100)
 
 
 
@@ -1692,7 +1759,9 @@ async def analyze(target, profile="full"):
                         f"{header} not present",
                         "Missing browser security controls may increase attack surface.",
                         info["fix"],
-                        "Headers"
+                        "Headers",
+                        "HIGH",
+                        "header_check"
                     )
 
                     add_finding(
@@ -1862,8 +1931,21 @@ async def analyze(target, profile="full"):
             page_text = response.text.lower()
 
             if js_secrets:
-                score += min(30, len(js_secrets) * 8)
-                vulnerabilities.append("Possible secrets exposed in JavaScript files")
+                strong_secret_types = [
+                    "AWS Access Key",
+                    "Private Key Marker",
+                    "GitHub Token",
+                    "Slack Token"
+                ]
+
+                strong_hits = [
+                    x for x in js_secrets
+                    if x.get("type") in strong_secret_types
+                ]
+
+                if strong_hits:
+                    score += min(20, len(strong_hits) * 6)
+                    vulnerabilities.append("Possible secrets exposed in JavaScript files")
 
                 for secret in js_secrets[:8]:
                     add_vuln(
@@ -1883,7 +1965,9 @@ async def analyze(target, profile="full"):
                         "A public JavaScript file appears to contain a possible secret or credential-like value.",
                         secret.get("fix"),
                         "JavaScript Secrets",
-                        f"{secret.get('url')} | Evidence: {secret.get('evidence')}"
+                        f"{secret.get('url')} | Evidence: {secret.get('evidence')}",
+                        "HIGH" if secret.get("type") in ["AWS Access Key","Private Key Marker","GitHub Token"] else "MEDIUM",
+                        "pattern_match"
                     )
 
             if api_endpoints:
@@ -1900,7 +1984,7 @@ async def analyze(target, profile="full"):
                 for endpoint in api_endpoints[:15]:
 
                     if endpoint.get("severity") == "MEDIUM":
-                        score += 4
+                        score += 1
 
                         add_vuln(
                             vulnerability_checks,
@@ -1959,7 +2043,7 @@ async def analyze(target, profile="full"):
                         add_vuln(
                             vulnerability_checks,
                             "Possible SQL Injection",
-                            "HIGH",
+                            "MEDIUM",
                             payload,
                             "Database error patterns were detected after a safe test payload was sent.",
                             "Use parameterized queries, server-side validation, and avoid showing database errors to users.",
@@ -1969,7 +2053,7 @@ async def analyze(target, profile="full"):
                         add_finding(
                             findings,
                             "Possible SQL Injection",
-                            "HIGH",
+                            "MEDIUM",
                             "The application returned SQL-related error patterns after a safe test payload.",
                             "Use parameterized queries and sanitize user input. Disable detailed database errors in production.",
                             "Injection",
@@ -1986,7 +2070,7 @@ async def analyze(target, profile="full"):
                         add_vuln(
                             vulnerability_checks,
                             "Possible Reflected XSS",
-                            "MEDIUM",
+                            "LOW",
                             payload,
                             "The test payload was reflected in the HTTP response.",
                             "Escape output, sanitize user-controlled input, and apply a strong Content-Security-Policy.",
@@ -1996,7 +2080,7 @@ async def analyze(target, profile="full"):
                         add_finding(
                             findings,
                             "Possible Reflected XSS",
-                            "MEDIUM",
+                            "LOW",
                             "User-controlled input appears to be reflected in the response.",
                             "Escape HTML output, validate input, and add a strong Content-Security-Policy header.",
                             "XSS",
@@ -2219,10 +2303,18 @@ async def analyze(target, profile="full"):
             whois_evidence or whois_asn.get("ip")
         )
 
+    tech_text = " ".join(technologies + vulnerabilities)
+
     for item in cve_results:
         for cve in item.get("cves", []):
+
             severity = cve.get("severity", "UNKNOWN")
-            score += severity_points(severity)
+
+            if not has_version_info(tech_text):
+                severity = "INFO"
+
+            else:
+                score += severity_points(severity)
 
             add_vuln(
                 vulnerability_checks,
@@ -2244,7 +2336,7 @@ async def analyze(target, profile="full"):
                 cve.get("url")
             )
 
-    score = min(score, 100)
+    score = calculate_realistic_score(findings)
 
     if score >= 70:
         risk = "HIGH"
