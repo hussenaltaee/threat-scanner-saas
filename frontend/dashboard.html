@@ -23,7 +23,7 @@ body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(
 header{position:sticky;top:0;z-index:20;background:rgba(15,23,42,.92);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 h1{margin:0;font-size:24px}.sub{color:var(--muted);font-size:13px;margin-top:4px}.wrap{max-width:1200px;margin:auto;padding:22px}
 .actions{display:flex;gap:10px;flex-wrap:wrap}button,a.btn{background:var(--blue);color:#020617;border:none;border-radius:10px;padding:10px 13px;font-weight:bold;cursor:pointer;text-decoration:none;display:inline-block}.danger{background:var(--red);color:#fff}.ghost{background:#334155;color:#fff}.green{background:var(--green);color:#052e16}
-.toolbar{display:grid;grid-template-columns:1.5fr .8fr .8fr auto;gap:10px;margin:18px 0}.toolbar input,.toolbar select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#020617;color:#fff}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}.card{background:rgba(30,41,59,.96);border:1px solid var(--line);border-left:6px solid var(--blue);border-radius:16px;padding:16px;box-shadow:0 12px 28px rgba(0,0,0,.25)}.card h3{margin:0 0 8px}.card p{line-height:1.55}.metric p{font-size:26px;font-weight:bold;margin:6px 0 0}.low{border-left-color:var(--green)}.medium{border-left-color:var(--yellow)}.high{border-left-color:var(--red)}.critical{border-left-color:var(--critical)}.unknown{border-left-color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.scan-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#334155;color:#fff;font-weight:bold;font-size:12px}.badge.LOW{background:#14532d}.badge.MEDIUM{background:#78350f}.badge.HIGH{background:#7f1d1d}.badge.CRITICAL{background:#7f1d1d}.muted{color:var(--muted)}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hidden{display:none}.report-section{background:#020617;border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}.mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}.mini{background:#0f172a;border:1px solid #1f2937;border-radius:12px;padding:10px}.mini b{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}.finding{background:#0f172a;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:12px;margin:10px 0}pre{white-space:pre-wrap;word-break:break-word;background:#020617;border:1px solid var(--line);padding:14px;border-radius:12px;max-height:420px;overflow:auto}.toast{position:fixed;right:18px;bottom:18px;background:#020617;border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:12px;padding:12px 14px;box-shadow:0 12px 30px rgba(0,0,0,.4);display:none;z-index:99}a{color:var(--blue)}
+.toolbar{display:grid;grid-template-columns:1.5fr .8fr .8fr auto auto;gap:10px;margin:18px 0}.toolbar input,.toolbar select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#020617;color:#fff}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}.card{background:rgba(30,41,59,.96);border:1px solid var(--line);border-left:6px solid var(--blue);border-radius:16px;padding:16px;box-shadow:0 12px 28px rgba(0,0,0,.25)}.card h3{margin:0 0 8px}.card p{line-height:1.55}.metric p{font-size:26px;font-weight:bold;margin:6px 0 0}.low{border-left-color:var(--green)}.medium{border-left-color:var(--yellow)}.high{border-left-color:var(--red)}.critical{border-left-color:var(--critical)}.unknown{border-left-color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.scan-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#334155;color:#fff;font-weight:bold;font-size:12px}.badge.LOW{background:#14532d}.badge.MEDIUM{background:#78350f}.badge.HIGH{background:#7f1d1d}.badge.CRITICAL{background:#7f1d1d}.muted{color:var(--muted)}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hidden{display:none}.report-section{background:#020617;border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}.mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}.mini{background:#0f172a;border:1px solid #1f2937;border-radius:12px;padding:10px}.mini b{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}.finding{background:#0f172a;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:12px;margin:10px 0}pre{white-space:pre-wrap;word-break:break-word;background:#020617;border:1px solid var(--line);padding:14px;border-radius:12px;max-height:420px;overflow:auto}.toast{position:fixed;right:18px;bottom:18px;background:#020617;border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:12px;padding:12px 14px;box-shadow:0 12px 30px rgba(0,0,0,.4);display:none;z-index:99}a{color:var(--blue)}
 @media(max-width:800px){header{padding:14px}.wrap{padding:14px}.toolbar{grid-template-columns:1fr}h1{font-size:21px}.actions{width:100%}.actions button,.actions a{flex:1;text-align:center}.metric p{font-size:22px}}
 </style>
 </head>
@@ -42,6 +42,7 @@ h1{margin:0;font-size:24px}.sub{color:var(--muted);font-size:13px;margin-top:4px
 
 <div class="wrap">
     <div id="queueBox"></div>
+    <div id="dashStatus" class="card" style="display:none"></div>
 
     <div class="toolbar">
         <input id="searchBox" placeholder="Search target..." oninput="renderHistory()">
@@ -60,6 +61,7 @@ h1{margin:0;font-size:24px}.sub{color:var(--muted);font-size:13px;margin-top:4px
             <option value="score_low">Lowest Score</option>
         </select>
         <button class="green" onclick="exportHistory()">⬇️ Export History</button>
+        <button class="ghost" onclick="clearFilters()">Clear</button>
     </div>
 
     <div id="historyStats" class="summary"></div>
@@ -98,20 +100,44 @@ function showToast(msg){
 }
 
 async function apiFetch(path, options = {}){
-    const res = await fetch(API + path, {
-        ...options,
-        headers:{
-            "Content-Type":"application/json",
-            "Authorization":"Bearer " + token(),
-            ...(options.headers || {})
-        }
-    });
-    const data = await res.json().catch(() => ({}));
-    if(res.status === 401){
-        localStorage.removeItem("token");
-        document.getElementById("container").innerHTML = `<div class="card high"><h3>❌ Session expired</h3><p>Please login again from index.html</p></div>`;
+    if(!token()){
+        return {
+            res: {ok:false, status:401},
+            data: {detail:"Not logged in"}
+        };
     }
-    return {res, data};
+
+    try{
+        const res = await fetch(API + path, {
+            ...options,
+            headers:{
+                "Content-Type":"application/json",
+                "Authorization":"Bearer " + token(),
+                ...(options.headers || {})
+            }
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if(res.status === 401){
+            localStorage.removeItem("token");
+            document.getElementById("container").innerHTML = `
+                <div class="card high">
+                    <h3>❌ Session expired</h3>
+                    <p>Please login again from index.html</p>
+                    <a class="btn" href="index.html">Go to Login</a>
+                </div>
+            `;
+        }
+
+        return {res, data};
+
+    }catch(e){
+        return {
+            res: {ok:false, status:0},
+            data: {detail:"Cannot connect to backend"}
+        };
+    }
 }
 
 async function loadQueueStatus(){
@@ -135,7 +161,13 @@ async function loadQueueStatus(){
 
 async function loadData(manual=false){
     if(!token()){
-        document.getElementById("container").innerHTML = `<div class="card high"><h3>❌ Not Logged In</h3><p>Please login first from index.html</p></div>`;
+        document.getElementById("container").innerHTML = `
+            <div class="card high">
+                <h3>❌ Not Logged In</h3>
+                <p>Please login first from index.html</p>
+                <a class="btn" href="index.html">Go to Login</a>
+            </div>
+        `;
         return;
     }
     await loadQueueStatus();
@@ -146,6 +178,16 @@ async function loadData(manual=false){
     }
     historyItems = Array.isArray(data.data) ? data.data : [];
     renderHistory();
+
+    const status = document.getElementById("dashStatus");
+    status.style.display = "block";
+    status.innerHTML = `
+        <b>✅ Dashboard connected</b>
+        <p class="muted" style="margin:6px 0 0">
+            Backend: ${esc(API)} | Last refresh: ${new Date().toLocaleString()}
+        </p>
+    `;
+
     if(manual) showToast("Dashboard refreshed");
 }
 
@@ -203,6 +245,7 @@ function renderHistory(){
             <div class="row">
                 <button onclick="viewReport(${Number(item.id)})">View Report</button>
                 <button class="ghost" onclick="downloadSingleReport(${Number(item.id)})">JSON</button>
+                <button class="ghost" onclick="copyText('${"${esc(item.target || '')}"}')">Copy Target</button>
                 <button class="danger" onclick="deleteHistory(${Number(item.id)})">Delete</button>
             </div>
         </div>`;
@@ -291,6 +334,22 @@ async function deleteHistory(id){
     historyItems = historyItems.map(normalizeItem).filter(x => Number(x.id) !== Number(id));
     renderHistory();
     showToast("Scan deleted");
+}
+
+
+function clearFilters(){
+    document.getElementById("searchBox").value = "";
+    document.getElementById("riskFilter").value = "ALL";
+    document.getElementById("sortBox").value = "newest";
+    renderHistory();
+    showToast("Filters cleared");
+}
+
+function copyText(value){
+    navigator.clipboard?.writeText(String(value || "")).then(
+        () => showToast("Copied"),
+        () => showToast("Could not copy")
+    );
 }
 
 function logout(){
