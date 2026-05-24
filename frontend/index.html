@@ -352,7 +352,17 @@ async function deleteHistoryScan(id){
 }
 
 function logout(){
-{ if(progressTimer){ clearInterval(progressTimer); progressTimer=null; } localStorage.removeItem("token"); currentJobId=null; lastReport=null; updateAuthUI(); setStatus("👋 Logged out"); }
+  if(progressTimer){
+    clearInterval(progressTimer);
+    progressTimer = null;
+  }
+
+  localStorage.removeItem("token");
+  currentJobId = null;
+  lastReport = null;
+  updateAuthUI();
+  setStatus("👋 Logged out");
+}
 </script>
 </body>
 </html>
