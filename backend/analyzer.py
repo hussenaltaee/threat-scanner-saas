@@ -969,6 +969,98 @@ async def check_js_secrets(client, response):
 
 
 
+def extract_api_endpoints(text):
+    endpoints = set()
+
+    if not text:
+        return []
+
+    patterns = [
+        r'["\'](\/api\/[^"\']+)["\']',
+        r'["\'](\/graphql[^"\']*)["\']',
+        r'["\'](\/v[0-9]+\/[^"\']+)["\']',
+        r'["\'](\/admin[^"\']*)["\']',
+        r'["\'](https?:\/\/[^"\']+\/api\/[^"\']+)["\']'
+    ]
+
+    for pattern in patterns:
+        try:
+            matches = re.findall(pattern, text, flags=re.IGNORECASE)
+
+            for match in matches:
+                endpoint = str(match).strip()
+
+                if len(endpoint) > 3:
+                    endpoints.add(endpoint)
+
+        except Exception:
+            continue
+
+    dangerous_keywords = [
+        "debug",
+        "internal",
+        "private",
+        "test",
+        "dev",
+        "swagger",
+        "graphql",
+        "admin"
+    ]
+
+    results = []
+
+    for endpoint in sorted(list(endpoints))[:40]:
+        severity = "INFO"
+
+        if any(k in endpoint.lower() for k in dangerous_keywords):
+            severity = "MEDIUM"
+
+        results.append({
+            "endpoint": endpoint,
+            "severity": severity
+        })
+
+    return results
+
+
+async def discover_api_endpoints(client, response):
+    if not response:
+        return []
+
+    endpoints = []
+
+    try:
+        html = response.text or ""
+
+        endpoints.extend(extract_api_endpoints(html))
+
+        js_urls = extract_js_urls(response.url, html)
+
+        tasks = [
+            safe_get(client, js_url)
+            for js_url in js_urls
+        ]
+
+        responses = await asyncio.gather(*tasks)
+
+        for js_res in responses:
+            if not js_res or js_res.status_code != 200:
+                continue
+
+            try:
+                js_text = js_res.text[:250000]
+                endpoints.extend(extract_api_endpoints(js_text))
+            except Exception:
+                continue
+
+    except Exception:
+        return []
+
+    return dedupe_dicts(endpoints, ["endpoint"])
+
+
+
+
 async def fetch_cves_for_keyword(client, keyword):
     cves = []
 
@@ -1420,6 +1512,12 @@ async def analyze(target, profile="full"):
             else []
         )
 
+        api_endpoints = (
+            await discover_api_endpoints(client, response)
+            if response and profile in ["full", "deep"]
+            else []
+        )
+
         if not response:
             score += 25
             alerts.append("Website is not reachable")
@@ -1707,6 +1805,32 @@ async def analyze(target, profile="full"):
                         "JavaScript Secrets",
                         f"{secret.get('url')} | Evidence: {secret.get('evidence')}"
                     )
+
+            if api_endpoints:
+                add_finding(
+                    findings,
+                    "API Endpoints Discovered",
+                    "INFO",
+                    f"{len(api_endpoints)} possible API endpoints were discovered.",
+                    "Review exposed endpoints and ensure authentication, authorization, and rate limiting are enabled.",
+                    "Attack Surface",
+                    ", ".join([x.get("endpoint") for x in api_endpoints[:5]])
+                )
+
+                for endpoint in api_endpoints[:15]:
+
+                    if endpoint.get("severity") == "MEDIUM":
+                        score += 4
+
+                        add_vuln(
+                            vulnerability_checks,
+                            "Sensitive API Endpoint Discovered",
+                            "LOW",
+                            endpoint.get("endpoint"),
+                            "Potentially sensitive API or admin endpoint discovered in frontend content.",
+                            "Protect internal/admin/debug endpoints and disable unused public APIs.",
+                            "Attack Surface"
+                        )
 
             test_payloads = [
                 "' OR '1'='1",
@@ -2119,6 +2243,7 @@ async def analyze(target, profile="full"):
         "waf": waf,
         "http_methods": http_methods,
         "js_secrets": js_secrets,
+        "api_endpoints": api_endpoints,
         "vulnerabilities": vulnerabilities,
         "vulnerability_checks": vulnerability_checks,
         "findings": findings,
