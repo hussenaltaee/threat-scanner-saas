@@ -218,20 +218,141 @@ function downloadScreenshot(dataUrl, target){ const a=document.createElement("a"
 function downloadReport(){ if(!lastReport){ setStatus("❌ No report to download"); return; } const blob=new Blob([JSON.stringify(lastReport,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`scan-report-${lastReport.host || "target"}.json`; a.click(); URL.revokeObjectURL(url); }
 function downloadPDF(){ if(!lastReport){ setStatus("❌ No report to export"); return; } const win=window.open("","_blank"); win.document.write(`<html><head><title>Threat Scanner PDF Report</title><style>body{font-family:Arial;padding:30px;color:#111827}.box{border:1px solid #ccc;padding:15px;margin:12px 0;border-radius:8px}</style></head><body><h1>🛡️ Threat Scanner Report</h1><div class="box"><p><b>Target:</b> ${esc(lastReport.target)}</p><p><b>Host:</b> ${esc(lastReport.host)}</p><p><b>Profile:</b> ${esc(lastReport.profile || "full")}</p><p><b>Risk:</b> ${esc(lastReport.risk)}</p><p><b>Score:</b> ${esc(lastReport.score)}/100</p><p><b>Total Vulnerabilities:</b> ${lastReport.vulnerability_checks?.length || 0}</p><p><b>Nikto-like Checks:</b> ${lastReport.nikto_checks?.length || 0}</p><p><b>TLS Version:</b> ${esc(lastReport.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(lastReport.ssl?.cipher_name || "Unknown")}</p><p><b>ASN:</b> ${esc(lastReport.whois_asn?.asn || "Unknown")}</p><p><b>Organization:</b> ${esc(lastReport.whois_asn?.organization || "Unknown")}</p><p><b>Country:</b> ${esc(lastReport.whois_asn?.country || "Unknown")}</p></div><script>window.print();<\/script></body></html>`); win.document.close(); }
 
+
 async function loadHistory(){
-  const token = requireToken(); if(!token) return;
-  $("out").innerHTML = `<div class="card INFO"><h2>📜 Loading History...</h2></div>`;
+  const token = requireToken(); 
+  if(!token) return;
+
+  $("out").innerHTML = `
+    <div class="card INFO">
+      <h2>📜 Loading History...</h2>
+      <p>Please wait...</p>
+    </div>
+  `;
+
   try{
-    const res = await fetch(API + "/history", {headers:{"Authorization":"Bearer " + token}});
+    const res = await fetch(API + "/history", {
+      headers:{
+        "Authorization":"Bearer " + token
+      }
+    });
+
     const data = await res.json().catch(()=>({}));
-    if(!res.ok){ showError(data.detail || "History endpoint not available yet"); return; }
-    const items = Array.isArray(data) ? data : (data.history || data.scans || []);
-    if(!items.length){ $("out").innerHTML = `<div class="card INFO"><h2>📜 History</h2><p>No saved scans found.</p></div>`; return; }
-    $("out").innerHTML = `<div class="card INFO"><h2>📜 Scan History</h2>${items.map(i => `<div class="history-row"><div><b>${esc(i.target || i.host || 'Unknown target')}</b><br><span class="mini">Risk: ${esc(i.risk || 'Unknown')} | Score: ${esc(i.score ?? 'N/A')} | ${esc(i.created_at || i.date || '')}</span></div><span class="pill">${esc(i.risk || 'INFO')}</span></div>`).join('')}</div>`;
-  }catch(e){ showError("Cannot connect to history endpoint"); }
+
+    if(!res.ok){
+      showError(data.detail || "Could not load history");
+      return;
+    }
+
+    const items = data.data || [];
+
+    if(!items.length){
+      $("out").innerHTML = `
+        <div class="card INFO">
+          <h2>📜 Scan History</h2>
+          <p>No saved scans found.</p>
+        </div>
+      `;
+      return;
+    }
+
+    $("out").innerHTML = `
+      <div class="card INFO">
+        <div class="section-title">
+          <h2>📜 Scan History</h2>
+          <span class="pill">${items.length} scans</span>
+        </div>
+
+        ${items.map(i => `
+          <div class="history-row">
+            <div>
+              <b>${esc(i.target || "Unknown target")}</b><br>
+              <span class="mini">
+                Risk: ${esc(i.risk || "Unknown")} |
+                Score: ${esc(i.score ?? "N/A")}/100 |
+                Date: ${esc(i.created_at || "")}
+              </span>
+            </div>
+
+            <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+              <span class="pill">${esc(i.risk || "INFO")}</span>
+              <button class="btn secondary" onclick="viewHistoryReport(${i.id})">
+                View
+              </button>
+              <button class="btn danger" onclick="deleteHistoryScan(${i.id})">
+                Delete
+              </button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `;
+
+  }catch(e){
+    showError("Cannot connect to history endpoint");
+  }
 }
 
-function logout(){ if(progressTimer){ clearInterval(progressTimer); progressTimer=null; } localStorage.removeItem("token"); currentJobId=null; lastReport=null; updateAuthUI(); setStatus("👋 Logged out"); }
+
+async function viewHistoryReport(id){
+  const token = requireToken(); 
+  if(!token) return;
+
+  try{
+    const res = await fetch(API + "/history/" + id, {
+      headers:{
+        "Authorization":"Bearer " + token
+      }
+    });
+
+    const report = await res.json().catch(()=>({}));
+
+    if(!res.ok){
+      showError(report.detail || "Could not load report");
+      return;
+    }
+
+    showResult(report);
+
+  }catch(e){
+    showError("Cannot load scan report");
+  }
+}
+
+
+async function deleteHistoryScan(id){
+  const token = requireToken(); 
+  if(!token) return;
+
+  if(!confirm("Delete this scan from history?")){
+    return;
+  }
+
+  try{
+    const res = await fetch(API + "/history/" + id, {
+      method:"DELETE",
+      headers:{
+        "Authorization":"Bearer " + token
+      }
+    });
+
+    const data = await res.json().catch(()=>({}));
+
+    if(!res.ok){
+      showError(data.detail || "Could not delete scan");
+      return;
+    }
+
+    setStatus("✅ Scan deleted");
+    loadHistory();
+
+  }catch(e){
+    showError("Cannot delete scan");
+  }
+}
+
+function logout(){
+{ if(progressTimer){ clearInterval(progressTimer); progressTimer=null; } localStorage.removeItem("token"); currentJobId=null; lastReport=null; updateAuthUI(); setStatus("👋 Logged out"); }
 </script>
 </body>
 </html>
