@@ -2251,31 +2251,65 @@ def separate_results(findings, vulnerability_checks):
 
 
 def calculate_strict_score(separated):
+    """
+    Realistic risk engine:
+    - Confirmed vulnerabilities affect score heavily
+    - Possible issues affect score lightly
+    - Informational findings do NOT increase risk
+    - Missing headers are treated as weak hardening issues
+    """
+
     score = 0
 
+    confirmed = separated.get("confirmed_vulnerabilities", [])
+    possible = separated.get("possible_issues", [])
+
     confirmed_weights = {
-        "CRITICAL": 35,
+        "CRITICAL": 40,
         "HIGH": 25,
-        "MEDIUM": 10,
-        "LOW": 2,
+        "MEDIUM": 12,
+        "LOW": 4,
         "INFO": 0
     }
 
     possible_weights = {
-        "CRITICAL": 8,
+        "CRITICAL": 10,
         "HIGH": 6,
-        "MEDIUM": 3,
+        "MEDIUM": 2,
         "LOW": 0,
         "INFO": 0
     }
 
-    for item in separated.get("confirmed_vulnerabilities", []):
-        score += confirmed_weights.get(str(item.get("severity", "INFO")).upper(), 0)
+    for item in confirmed:
+        sev = str(item.get("severity", "INFO")).upper()
+        score += confirmed_weights.get(sev, 0)
 
-    for item in separated.get("possible_issues", []):
-        score += possible_weights.get(str(item.get("severity", "INFO")).upper(), 0)
+    for item in possible:
+        sev = str(item.get("severity", "INFO")).upper()
+        category = str(item.get("category", "")).lower()
+        title = str(item.get("title", "")).lower()
 
-    return min(score, 100)
+        # Missing headers should barely affect score
+        if "header" in category or "missing security header" in title:
+            score += 0.5
+            continue
+
+        # Attack surface findings should have tiny impact
+        if category in [
+            "attack surface",
+            "information disclosure",
+            "fingerprinting",
+            "ip intelligence"
+        ]:
+            score += 1
+            continue
+
+        score += possible_weights.get(sev, 0)
+
+    # Clamp score realistically
+    score = min(round(score), 100)
+
+    return score
 
 
 def build_strict_detection_summary(separated):
@@ -2291,7 +2325,7 @@ def build_strict_detection_summary(separated):
             x for x in confirmed
             if str(x.get("severity", "")).upper() in ["HIGH", "CRITICAL"]
         ]),
-        "note": "Only confirmed findings with strong evidence should be treated as real vulnerabilities."
+        "note": "Risk score is based primarily on confirmed vulnerabilities. Informational findings and missing headers have minimal impact."
     }
 
 
@@ -3313,9 +3347,12 @@ async def analyze(target, profile="full"):
 
     score = calculate_strict_score(separated_results)
 
-    if score >= 70:
+    # Realistic enterprise-style thresholds
+    if score >= 75:
+        risk = "CRITICAL"
+    elif score >= 45:
         risk = "HIGH"
-    elif score >= 35:
+    elif score >= 20:
         risk = "MEDIUM"
     else:
         risk = "LOW"
