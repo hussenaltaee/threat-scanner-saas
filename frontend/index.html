@@ -660,6 +660,49 @@ function renderRealValidation(rv){
   return output.length ? output.join("") : "<p>No SQLi/XSS behavior indicators detected by real validation</p>";
 }
 
+
+function renderSeparatedResults(data){
+  const separated = data.separated_results || {};
+  const confirmed = data.confirmed_vulnerabilities || separated.confirmed_vulnerabilities || [];
+  const possible = data.possible_issues || separated.possible_issues || [];
+  const info = data.informational_findings || separated.informational_findings || [];
+
+  const renderList = (items, emptyText, icon) => {
+    if(!Array.isArray(items) || !items.length){
+      return `<p>${emptyText}</p>`;
+    }
+
+    return items.map(item => `
+      <div class="finding ${esc(item.severity || "INFO")}">
+        <h4>${icon} ${esc(item.title || item.name || "Finding")}</h4>
+        <p>${statusChip(item.status)} <b>Severity:</b> ${esc(item.severity || "INFO")} | <b>Confidence:</b> ${confidenceText(item.confidence)}</p>
+        <p><b>Category:</b> ${esc(item.category || "General")}</p>
+        <p><b>Evidence Type:</b> ${esc(item.evidence_type || "generic")}</p>
+        <p><b>Evidence:</b> ${esc(item.evidence || "N/A")}</p>
+        <p><b>Description:</b> ${esc(item.description || item.impact || "N/A")}</p>
+        <p><b>Fix:</b> ${esc(item.fix || "Review manually.")}</p>
+      </div>
+    `).join("");
+  };
+
+  return `
+    <hr>
+    <h3>✅ Confirmed Vulnerabilities</h3>
+    <p class="mini">These are the only findings treated as real vulnerabilities because they have stronger evidence.</p>
+    ${renderList(confirmed, "✅ No confirmed vulnerabilities detected.", "🚨")}
+
+    <hr>
+    <h3>⚠️ Possible Issues / Manual Review</h3>
+    <p class="mini">These are suspicious indicators. They need manual verification and are not treated as confirmed vulnerabilities.</p>
+    ${renderList(possible, "No possible issues detected.", "⚠️")}
+
+    <hr>
+    <h3>ℹ️ Informational / Attack Surface</h3>
+    <p class="mini">These are useful security observations, not vulnerabilities by themselves.</p>
+    ${renderList(info, "No informational findings available.", "ℹ️")}
+  `;
+}
+
 function showResult(data){
   if(!data){ showError("Empty scan result"); return; }
   lastReport = data;
@@ -670,6 +713,10 @@ function showResult(data){
   const confirmedCount = detectionSummary.confirmed ?? vulns.filter(v => String(v.status || "").toUpperCase() === "CONFIRMED").length;
   const possibleCount = detectionSummary.possible ?? vulns.filter(v => String(v.status || "").toUpperCase() === "POSSIBLE").length;
   const infoCount = detectionSummary.informational ?? 0;
+  const confirmedVulns = data.confirmed_vulnerabilities || data.separated_results?.confirmed_vulnerabilities || [];
+  const possibleIssues = data.possible_issues || data.separated_results?.possible_issues || [];
+  const informationalFindings = data.informational_findings || data.separated_results?.informational_findings || [];
+  const separatedSections = renderSeparatedResults(data);
   const openPorts = data.open_ports?.length ? data.open_ports.map(p => typeof p === "object" ? `<div class="finding ${p.risk === "RISKY" ? "MEDIUM" : "INFO"}"><p><b>Port:</b> ${esc(p.port)}</p><p><b>Service:</b> ${esc(p.service || "Unknown")}</p><p><b>Risk:</b> ${esc(p.risk || "NORMAL")}</p><p><b>Banner:</b> ${esc(p.banner || "-")}</p></div>` : `<p>${esc(p)}</p>`).join("") : "<p>None</p>";
   const vulnerabilityChecks = vulns.length ? vulns.map(v => `<div class="finding ${esc(v.severity || 'UNKNOWN')}"><h4>🧨 ${esc(v.name)}</h4><p>${statusChip(v.status)} <b>Severity:</b> ${esc(v.severity)} | <b>Confidence:</b> ${confidenceText(v.confidence)}</p><p><b>Evidence Type:</b> ${esc(v.evidence_type || "generic")}</p><p><b>Evidence:</b> ${esc(v.evidence)}</p><p><b>Impact:</b> ${esc(v.impact)}</p><p><b>Fix:</b> ${esc(v.fix)}</p></div>`).join("") : "<p>✅ No confirmed vulnerability indicators detected</p>";
   const niktoResults = niktoChecks.length ? niktoChecks.map(n => `<div class="nikto ${esc(n.severity || 'INFO')}"><h4>🧪 ${esc(n.name)}</h4><p><b>Severity:</b> ${esc(n.severity)}</p><p><b>Path:</b> ${esc(n.path)}</p><p><b>Status:</b> ${esc(n.status)}</p><p><b>URL:</b> <a href="${esc(n.url)}" target="_blank">${esc(n.url)}</a></p><p><b>Evidence:</b> ${esc(n.evidence)}</p><p><b>Fix:</b> ${esc(n.fix)}</p></div>`).join("") : "<p>✅ No Nikto-like exposed paths detected</p>";
@@ -685,7 +732,7 @@ function showResult(data){
   const graphQLResult = renderGraphQL(data.graphql_introspection);
   const realValidation = renderRealValidation(data.real_validation);
 
-  $("out").innerHTML = `<div class="card ${esc(data.risk || 'UNKNOWN')}"><div class="section-title"><h2>🛡️ Scan Result</h2><span class="pill">${esc(data.profile || "full")}</span></div><div class="summary-grid"><div class="summary-box"><h3>Risk</h3><p>${esc(data.risk || 'UNKNOWN')}</p></div><div class="summary-box"><h3>Score</h3><p>${esc(data.score ?? 'N/A')}/100</p></div><div class="summary-box"><h3>Total Checks</h3><p>${vulns.length}</p></div><div class="summary-box"><h3>Confirmed</h3><p>${confirmedCount}</p></div><div class="summary-box"><h3>Possible</h3><p>${possibleCount}</p></div><div class="summary-box"><h3>Nikto</h3><p>${niktoChecks.length}</p></div><div class="summary-box"><h3>Critical</h3><p>${count('CRITICAL')}</p></div><div class="summary-box"><h3>High</h3><p>${count('HIGH')}</p></div><div class="summary-box"><h3>Medium</h3><p>${count('MEDIUM')}</p></div><div class="summary-box"><h3>Low</h3><p>${count('LOW')}</p></div><div class="summary-box"><h3>CVEs</h3><p>${cveCount}</p></div><div class="summary-box"><h3>Subdomains</h3><p>${data.subdomains?.length || 0}</p></div><div class="summary-box"><h3>Target Type</h3><p>${esc((data.target_type || "domain").toUpperCase())}</p></div></div><h3>🌐 Target Information</h3><p>${formatTargetType(data.target_type)}</p><p><b>Target:</b> ${esc(data.target)}</p><p><b>Host:</b> ${esc(data.host)}</p><p><b>IP:</b> ${esc(data.ip)}</p><p><b>Reverse DNS:</b> ${esc(data.reverse_dns?.reverse_dns || "Not found")}</p><p><b>Final URL:</b> ${esc(data.final_url || "N/A")}</p><p><b>HTTP Status:</b> ${esc(data.status_code)}</p><hr><h3>✅ Detection Confidence</h3><div class="finding INFO"><p><b>Confirmed:</b> ${confirmedCount}</p><p><b>Possible:</b> ${possibleCount}</p><p><b>Informational:</b> ${infoCount}</p><p class="mini">Confirmed = strong evidence. Possible = suspicious indicator needing review. Info = attack surface or best-practice finding.</p></div><hr><h3>📋 Priority Fix Plan</h3>${fixPlan}<hr><h3>🧨 Vulnerability Checks</h3>${vulnerabilityChecks}<hr><h3>🔐 JavaScript Secrets</h3>${jsSecrets}<hr><h3>🔎 API Endpoints / Attack Surface</h3>${apiEndpoints}<hr><h3>🧭 Advanced Exposure Engine</h3>${advancedExposures}<hr><h3>🔺 GraphQL Security</h3>${graphQLResult}<hr><h3>🧪 Real Validation Engine</h3>${realValidation}<hr><h3>🧪 Nikto-like Checks</h3>${niktoResults}<hr><h3>🔒 SSL / TLS</h3><p><b>SSL Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p><p><b>SSL Expiration:</b> ${esc(data.ssl?.info || "Unknown")}</p><p><b>TLS Version:</b> ${esc(data.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(data.ssl?.cipher_name || "Unknown")} / ${esc(data.ssl?.cipher_bits || "Unknown")} bits</p><p><b>Certificate Subject:</b> ${formatObject(data.ssl?.subject)}</p><p><b>Certificate Issuer:</b> ${formatObject(data.ssl?.issuer)}</p><hr><h3>🌐 DNS Security</h3><p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p><p><b>MX Records:</b> ${safeList(data.dns_security?.mx_records)}</p><p><b>NS Records:</b> ${safeList(data.dns_security?.ns_records)}</p><p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p><p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p><p><b>DNS Issues:</b> ${safeList(data.dns_security?.issues,"No DNS issues")}</p><hr><h3>🏢 Whois / ASN</h3>${whoisAsn}<hr><h3>🔁 Reverse DNS</h3>${reverseDns}<hr><h3>🤖 Robots.txt</h3><p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>Summary:</b> ${esc(data.robots_txt?.summary || "Unknown")}</p><p><b>Suspicious Entries:</b> ${safeList(data.robots_txt?.suspicious_entries)}</p><hr><h3>🛡️ Security.txt</h3><p><b>Exists:</b> ${data.security_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>URL:</b> ${esc(data.security_txt?.url || "N/A")}</p><p><b>Contacts:</b> ${safeList(data.security_txt?.contacts)}</p><p><b>Policy:</b> ${esc(data.security_txt?.policy || "None")}</p><hr><h3>🌍 Subdomains Discovered</h3>${subdomains}<hr><h3>🧠 Detected Technologies</h3><p>${safeList(data.technologies,"Unknown")}</p><hr><h3>🧬 CVE Results</h3>${cveResults}<hr><h3>🛡️ WAF Detection</h3><div class="finding INFO"><p><b>Name:</b> ${esc(data.waf?.name || data.waf || "Unknown")}</p><p><b>Confidence:</b> ${esc(data.waf?.confidence || "0%")}</p><p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p></div><hr><h3>🔁 HTTP Methods</h3><p>${safeList(data.http_methods,"Unknown")}</p><hr><h3>🚪 Open Ports</h3>${openPorts}<hr><h3>🧱 Security Headers</h3><p>✅ <b>Found:</b> ${safeList(data.security_headers?.found)}</p><p>❌ <b>Missing:</b> ${safeList(data.security_headers?.missing)}</p><hr><h3>📋 Findings & Fixes</h3>${findings}</div>`;
+  $("out").innerHTML = `<div class="card ${esc(data.risk || 'UNKNOWN')}"><div class="section-title"><h2>🛡️ Scan Result</h2><span class="pill">${esc(data.profile || "full")}</span></div><div class="summary-grid"><div class="summary-box"><h3>Risk</h3><p>${esc(data.risk || 'UNKNOWN')}</p></div><div class="summary-box"><h3>Score</h3><p>${esc(data.score ?? 'N/A')}/100</p></div><div class="summary-box"><h3>Total Checks</h3><p>${vulns.length}</p></div><div class="summary-box"><h3>Real Vulns</h3><p>${confirmedVulns.length}</p></div><div class="summary-box"><h3>Needs Review</h3><p>${possibleIssues.length}</p></div><div class="summary-box"><h3>Nikto</h3><p>${niktoChecks.length}</p></div><div class="summary-box"><h3>Critical</h3><p>${count('CRITICAL')}</p></div><div class="summary-box"><h3>High</h3><p>${count('HIGH')}</p></div><div class="summary-box"><h3>Medium</h3><p>${count('MEDIUM')}</p></div><div class="summary-box"><h3>Low</h3><p>${count('LOW')}</p></div><div class="summary-box"><h3>CVEs</h3><p>${cveCount}</p></div><div class="summary-box"><h3>Subdomains</h3><p>${data.subdomains?.length || 0}</p></div><div class="summary-box"><h3>Target Type</h3><p>${esc((data.target_type || "domain").toUpperCase())}</p></div></div><h3>🌐 Target Information</h3><p>${formatTargetType(data.target_type)}</p><p><b>Target:</b> ${esc(data.target)}</p><p><b>Host:</b> ${esc(data.host)}</p><p><b>IP:</b> ${esc(data.ip)}</p><p><b>Reverse DNS:</b> ${esc(data.reverse_dns?.reverse_dns || "Not found")}</p><p><b>Final URL:</b> ${esc(data.final_url || "N/A")}</p><p><b>HTTP Status:</b> ${esc(data.status_code)}</p><hr><h3>✅ Detection Confidence</h3><div class="finding INFO"><p><b>Confirmed:</b> ${confirmedCount}</p><p><b>Possible:</b> ${possibleCount}</p><p><b>Informational:</b> ${infoCount}</p><p class="mini">Real Vulns = strong evidence only. Needs Review = suspicious but not confirmed. Info = attack surface or best-practice finding.</p></div><hr><h3>📋 Priority Fix Plan</h3>${fixPlan}${separatedSections}<hr><h3>🔐 JavaScript Secrets</h3>${jsSecrets}<hr><h3>🔎 API Endpoints / Attack Surface</h3>${apiEndpoints}<hr><h3>🧭 Advanced Exposure Engine</h3>${advancedExposures}<hr><h3>🔺 GraphQL Security</h3>${graphQLResult}<hr><h3>🧪 Real Validation Engine</h3>${realValidation}<hr><h3>🧪 Nikto-like Checks</h3>${niktoResults}<hr><h3>🔒 SSL / TLS</h3><p><b>SSL Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p><p><b>SSL Expiration:</b> ${esc(data.ssl?.info || "Unknown")}</p><p><b>TLS Version:</b> ${esc(data.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(data.ssl?.cipher_name || "Unknown")} / ${esc(data.ssl?.cipher_bits || "Unknown")} bits</p><p><b>Certificate Subject:</b> ${formatObject(data.ssl?.subject)}</p><p><b>Certificate Issuer:</b> ${formatObject(data.ssl?.issuer)}</p><hr><h3>🌐 DNS Security</h3><p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p><p><b>MX Records:</b> ${safeList(data.dns_security?.mx_records)}</p><p><b>NS Records:</b> ${safeList(data.dns_security?.ns_records)}</p><p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p><p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p><p><b>DNS Issues:</b> ${safeList(data.dns_security?.issues,"No DNS issues")}</p><hr><h3>🏢 Whois / ASN</h3>${whoisAsn}<hr><h3>🔁 Reverse DNS</h3>${reverseDns}<hr><h3>🤖 Robots.txt</h3><p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>Summary:</b> ${esc(data.robots_txt?.summary || "Unknown")}</p><p><b>Suspicious Entries:</b> ${safeList(data.robots_txt?.suspicious_entries)}</p><hr><h3>🛡️ Security.txt</h3><p><b>Exists:</b> ${data.security_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>URL:</b> ${esc(data.security_txt?.url || "N/A")}</p><p><b>Contacts:</b> ${safeList(data.security_txt?.contacts)}</p><p><b>Policy:</b> ${esc(data.security_txt?.policy || "None")}</p><hr><h3>🌍 Subdomains Discovered</h3>${subdomains}<hr><h3>🧠 Detected Technologies</h3><p>${safeList(data.technologies,"Unknown")}</p><hr><h3>🧬 CVE Results</h3>${cveResults}<hr><h3>🛡️ WAF Detection</h3><div class="finding INFO"><p><b>Name:</b> ${esc(data.waf?.name || data.waf || "Unknown")}</p><p><b>Confidence:</b> ${esc(data.waf?.confidence || "0%")}</p><p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p></div><hr><h3>🔁 HTTP Methods</h3><p>${safeList(data.http_methods,"Unknown")}</p><hr><h3>🚪 Open Ports</h3>${openPorts}<hr><h3>🧱 Security Headers</h3><p>✅ <b>Found:</b> ${safeList(data.security_headers?.found)}</p><p>❌ <b>Missing:</b> ${safeList(data.security_headers?.missing)}</p><hr><h3>📋 Findings & Fixes</h3>${findings}</div>`;
 }
 
 async function captureScreenshot(){

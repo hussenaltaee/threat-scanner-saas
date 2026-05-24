@@ -2163,6 +2163,173 @@ def build_detection_summary(findings):
 
 
 
+def is_confirmed_vulnerability(item):
+    severity = str(item.get("severity", "INFO")).upper()
+    confidence = str(item.get("confidence", "LOW")).upper()
+    status = str(item.get("status", "")).upper()
+    evidence_type = str(item.get("evidence_type", "")).lower()
+
+    strong_evidence = [
+        "public_schema",
+        "graphql_introspection",
+        "database_error_pattern",
+        "public_file",
+        "confirmed_exposure",
+        "status_match",
+        "keyword_status_match",
+        "pattern_match"
+    ]
+
+    if status == "CONFIRMED":
+        return True
+
+    if severity in ["CRITICAL", "HIGH"] and confidence == "HIGH" and evidence_type in strong_evidence:
+        return True
+
+    return False
+
+
+def separate_results(findings, vulnerability_checks):
+    confirmed = []
+    possible = []
+    informational = []
+
+    combined = []
+
+    for item in vulnerability_checks:
+        combined.append({
+            "title": item.get("name"),
+            "severity": item.get("severity", "INFO"),
+            "category": item.get("category", "General"),
+            "description": item.get("impact"),
+            "evidence": item.get("evidence"),
+            "fix": item.get("fix"),
+            "confidence": item.get("confidence", "LOW"),
+            "evidence_type": item.get("evidence_type", "generic"),
+            "status": item.get("status", detection_status(item.get("severity"), item.get("confidence", "LOW"))),
+            "source": "vulnerability_check"
+        })
+
+    for item in findings:
+        combined.append({
+            "title": item.get("title"),
+            "severity": item.get("severity", "INFO"),
+            "category": item.get("category", "General"),
+            "description": item.get("description"),
+            "evidence": item.get("evidence"),
+            "fix": item.get("fix"),
+            "confidence": item.get("confidence", "LOW"),
+            "evidence_type": item.get("evidence_type", "generic"),
+            "status": item.get("status", detection_status(item.get("severity"), item.get("confidence", "LOW"))),
+            "source": "finding"
+        })
+
+    combined = dedupe_dicts(combined, ["title", "severity", "evidence"])
+
+    for item in combined:
+        sev = str(item.get("severity", "INFO")).upper()
+        status = str(item.get("status", "INFO")).upper()
+        confidence = str(item.get("confidence", "LOW")).upper()
+
+        if is_confirmed_vulnerability(item):
+            item["status"] = "CONFIRMED"
+            confirmed.append(item)
+
+        elif status == "POSSIBLE" or sev in ["HIGH", "MEDIUM"]:
+            item["status"] = "POSSIBLE"
+            possible.append(item)
+
+        else:
+            item["status"] = "INFO"
+            informational.append(item)
+
+    return {
+        "confirmed_vulnerabilities": confirmed,
+        "possible_issues": possible,
+        "informational_findings": informational
+    }
+
+
+def calculate_strict_score(separated):
+    score = 0
+
+    confirmed_weights = {
+        "CRITICAL": 35,
+        "HIGH": 25,
+        "MEDIUM": 10,
+        "LOW": 2,
+        "INFO": 0
+    }
+
+    possible_weights = {
+        "CRITICAL": 8,
+        "HIGH": 6,
+        "MEDIUM": 3,
+        "LOW": 0,
+        "INFO": 0
+    }
+
+    for item in separated.get("confirmed_vulnerabilities", []):
+        score += confirmed_weights.get(str(item.get("severity", "INFO")).upper(), 0)
+
+    for item in separated.get("possible_issues", []):
+        score += possible_weights.get(str(item.get("severity", "INFO")).upper(), 0)
+
+    return min(score, 100)
+
+
+def build_strict_detection_summary(separated):
+    confirmed = separated.get("confirmed_vulnerabilities", [])
+    possible = separated.get("possible_issues", [])
+    info = separated.get("informational_findings", [])
+
+    return {
+        "confirmed": len(confirmed),
+        "possible": len(possible),
+        "informational": len(info),
+        "confirmed_high_or_critical": len([
+            x for x in confirmed
+            if str(x.get("severity", "")).upper() in ["HIGH", "CRITICAL"]
+        ]),
+        "note": "Only confirmed findings with strong evidence should be treated as real vulnerabilities."
+    }
+
+
+def build_strict_remediation_plan(separated):
+    confirmed = separated.get("confirmed_vulnerabilities", [])
+    possible = separated.get("possible_issues", [])
+
+    severity_order = {
+        "CRITICAL": 0,
+        "HIGH": 1,
+        "MEDIUM": 2,
+        "LOW": 3,
+        "INFO": 4
+    }
+
+    confirmed_sorted = sorted(
+        confirmed,
+        key=lambda x: severity_order.get(str(x.get("severity", "INFO")).upper(), 99)
+    )
+
+    possible_sorted = sorted(
+        possible,
+        key=lambda x: severity_order.get(str(x.get("severity", "INFO")).upper(), 99)
+    )
+
+    return {
+        "fix_now": confirmed_sorted[:5],
+        "review_manually": possible_sorted[:5],
+        "top_issues": confirmed_sorted[:5] if confirmed_sorted else possible_sorted[:5],
+        "quick_wins": [
+            x for x in possible_sorted
+            if str(x.get("severity", "INFO")).upper() in ["LOW", "MEDIUM"]
+        ][:5]
+    }
+
+
+
+
 async def analyze(target, profile="full"):
     profile = profile.lower()
 
@@ -3139,7 +3306,12 @@ async def analyze(target, profile="full"):
         vulnerability_checks
     )
 
-    score = calculate_realistic_score_v2(findings)
+    separated_results = separate_results(
+        findings,
+        vulnerability_checks
+    )
+
+    score = calculate_strict_score(separated_results)
 
     if score >= 70:
         risk = "HIGH"
@@ -3148,7 +3320,7 @@ async def analyze(target, profile="full"):
     else:
         risk = "LOW"
 
-    detection_summary = build_detection_summary(findings)
+    detection_summary = build_strict_detection_summary(separated_results)
 
     structured = build_structured_storage(
         findings=findings,
@@ -3177,10 +3349,10 @@ async def analyze(target, profile="full"):
         **summary_counts
     }
 
-    remediation_plan = build_fix_plan(findings)
+    remediation_plan = build_strict_remediation_plan(separated_results)
 
     score_explanation = explain_score(
-        findings=findings,
+        findings=separated_results.get("confirmed_vulnerabilities", []) + separated_results.get("possible_issues", []),
         vulnerabilities=vulnerabilities,
         score=score
     )
@@ -3229,6 +3401,10 @@ async def analyze(target, profile="full"):
         "vulnerabilities": vulnerabilities,
         "vulnerability_checks": vulnerability_checks,
         "findings": findings,
+        "separated_results": separated_results,
+        "confirmed_vulnerabilities": separated_results.get("confirmed_vulnerabilities", []),
+        "possible_issues": separated_results.get("possible_issues", []),
+        "informational_findings": separated_results.get("informational_findings", []),
         "alerts": alerts,
         "structured": structured,
         "scan_summary": scan_summary,
