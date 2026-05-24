@@ -2164,35 +2164,46 @@ def build_detection_summary(findings):
 
 
 def is_confirmed_vulnerability(item):
+    """
+    Very strict confirmation logic:
+    A finding becomes a real vulnerability only when:
+    - Severity is HIGH or CRITICAL
+    - Confidence is HIGH
+    - Evidence type is strong enough
+    """
+
     severity = str(item.get("severity", "INFO")).upper()
     confidence = str(item.get("confidence", "LOW")).upper()
-    status = str(item.get("status", "")).upper()
     evidence_type = str(item.get("evidence_type", "")).lower()
 
-    strong_evidence = [
-        "public_schema",
-        "graphql_introspection",
+    real_confirmed_evidence = [
         "database_error_pattern",
+        "graphql_introspection",
+        "public_schema",
         "public_file",
-        "confirmed_exposure",
-        "status_match",
-        "keyword_status_match",
-        "pattern_match"
+        "private_key_exposed",
+        "real_secret_exposed",
+        "confirmed_exposure"
     ]
 
-    if status == "CONFIRMED":
-        return True
+    if confidence != "HIGH":
+        return False
 
-    if severity in ["CRITICAL", "HIGH"] and confidence == "HIGH" and evidence_type in strong_evidence:
-        return True
+    if severity not in ["CRITICAL", "HIGH"]:
+        return False
 
-    return False
+    if evidence_type not in real_confirmed_evidence:
+        return False
+
+    return True
 
 
 def separate_results(findings, vulnerability_checks):
     confirmed = []
     possible = []
     informational = []
+    hardening_issues = []
+    attack_surface = []
 
     combined = []
 
@@ -2226,19 +2237,51 @@ def separate_results(findings, vulnerability_checks):
 
     combined = dedupe_dicts(combined, ["title", "severity", "evidence"])
 
+    hardening_categories = [
+        "headers",
+        "cookies",
+        "dns",
+        "security policy",
+        "ssl/tls"
+    ]
+
+    attack_surface_categories = [
+        "attack surface",
+        "api documentation",
+        "admin/auth",
+        "graphql",
+        "subdomains",
+        "whois/asn",
+        "ip intelligence",
+        "ports",
+        "robots",
+        "cve"
+    ]
+
     for item in combined:
+        title = str(item.get("title", "")).lower()
+        category = str(item.get("category", "")).lower()
         sev = str(item.get("severity", "INFO")).upper()
         status = str(item.get("status", "INFO")).upper()
-        confidence = str(item.get("confidence", "LOW")).upper()
 
         if is_confirmed_vulnerability(item):
             item["status"] = "CONFIRMED"
             confirmed.append(item)
+            continue
 
-        elif status == "POSSIBLE" or sev in ["HIGH", "MEDIUM"]:
+        if any(x in category for x in hardening_categories) or "missing security header" in title:
+            item["status"] = "HARDENING"
+            hardening_issues.append(item)
+            continue
+
+        if any(x in category for x in attack_surface_categories):
+            item["status"] = "INFO"
+            attack_surface.append(item)
+            continue
+
+        if status == "POSSIBLE" and sev in ["CRITICAL", "HIGH", "MEDIUM"]:
             item["status"] = "POSSIBLE"
             possible.append(item)
-
         else:
             item["status"] = "INFO"
             informational.append(item)
@@ -2246,37 +2289,32 @@ def separate_results(findings, vulnerability_checks):
     return {
         "confirmed_vulnerabilities": confirmed,
         "possible_issues": possible,
+        "hardening_issues": hardening_issues,
+        "attack_surface": attack_surface,
         "informational_findings": informational
     }
 
 
 def calculate_strict_score(separated):
     """
-    Realistic risk engine:
-    - Confirmed vulnerabilities affect score heavily
-    - Possible issues affect score lightly
-    - Informational findings do NOT increase risk
-    - Missing headers are treated as weak hardening issues
+    Confirmed-only risk score:
+    - Confirmed vulnerabilities affect score.
+    - Possible issues do not raise score.
+    - Hardening, attack surface, and informational findings do not raise score.
     """
+
+    confirmed = separated.get("confirmed_vulnerabilities", [])
+
+    if not confirmed:
+        return 0
 
     score = 0
 
-    confirmed = separated.get("confirmed_vulnerabilities", [])
-    possible = separated.get("possible_issues", [])
-
     confirmed_weights = {
-        "CRITICAL": 40,
-        "HIGH": 25,
+        "CRITICAL": 45,
+        "HIGH": 30,
         "MEDIUM": 12,
-        "LOW": 4,
-        "INFO": 0
-    }
-
-    possible_weights = {
-        "CRITICAL": 10,
-        "HIGH": 6,
-        "MEDIUM": 2,
-        "LOW": 0,
+        "LOW": 3,
         "INFO": 0
     }
 
@@ -2284,29 +2322,6 @@ def calculate_strict_score(separated):
         sev = str(item.get("severity", "INFO")).upper()
         score += confirmed_weights.get(sev, 0)
 
-    for item in possible:
-        sev = str(item.get("severity", "INFO")).upper()
-        category = str(item.get("category", "")).lower()
-        title = str(item.get("title", "")).lower()
-
-        # Missing headers should barely affect score
-        if "header" in category or "missing security header" in title:
-            score += 0.5
-            continue
-
-        # Attack surface findings should have tiny impact
-        if category in [
-            "attack surface",
-            "information disclosure",
-            "fingerprinting",
-            "ip intelligence"
-        ]:
-            score += 1
-            continue
-
-        score += possible_weights.get(sev, 0)
-
-    # Clamp score realistically
     score = min(round(score), 100)
 
     return score
@@ -2315,23 +2330,28 @@ def calculate_strict_score(separated):
 def build_strict_detection_summary(separated):
     confirmed = separated.get("confirmed_vulnerabilities", [])
     possible = separated.get("possible_issues", [])
+    hardening = separated.get("hardening_issues", [])
+    attack_surface = separated.get("attack_surface", [])
     info = separated.get("informational_findings", [])
 
     return {
         "confirmed": len(confirmed),
         "possible": len(possible),
+        "hardening": len(hardening),
+        "attack_surface": len(attack_surface),
         "informational": len(info),
         "confirmed_high_or_critical": len([
             x for x in confirmed
             if str(x.get("severity", "")).upper() in ["HIGH", "CRITICAL"]
         ]),
-        "note": "Risk score is based primarily on confirmed vulnerabilities. Informational findings and missing headers have minimal impact."
+        "note": "Risk score uses confirmed vulnerabilities only. Hardening, attack surface, and possible findings do not count as real vulnerabilities."
     }
 
 
 def build_strict_remediation_plan(separated):
     confirmed = separated.get("confirmed_vulnerabilities", [])
     possible = separated.get("possible_issues", [])
+    hardening = separated.get("hardening_issues", [])
 
     severity_order = {
         "CRITICAL": 0,
@@ -2351,14 +2371,17 @@ def build_strict_remediation_plan(separated):
         key=lambda x: severity_order.get(str(x.get("severity", "INFO")).upper(), 99)
     )
 
+    hardening_sorted = sorted(
+        hardening,
+        key=lambda x: severity_order.get(str(x.get("severity", "INFO")).upper(), 99)
+    )
+
     return {
         "fix_now": confirmed_sorted[:5],
         "review_manually": possible_sorted[:5],
-        "top_issues": confirmed_sorted[:5] if confirmed_sorted else possible_sorted[:5],
-        "quick_wins": [
-            x for x in possible_sorted
-            if str(x.get("severity", "INFO")).upper() in ["LOW", "MEDIUM"]
-        ][:5]
+        "hardening": hardening_sorted[:5],
+        "top_issues": confirmed_sorted[:5],
+        "quick_wins": hardening_sorted[:5]
     }
 
 
@@ -3347,7 +3370,7 @@ async def analyze(target, profile="full"):
 
     score = calculate_strict_score(separated_results)
 
-    # Realistic enterprise-style thresholds
+    # Confirmed-only risk thresholds
     if score >= 75:
         risk = "CRITICAL"
     elif score >= 45:
@@ -3389,8 +3412,8 @@ async def analyze(target, profile="full"):
     remediation_plan = build_strict_remediation_plan(separated_results)
 
     score_explanation = explain_score(
-        findings=separated_results.get("confirmed_vulnerabilities", []) + separated_results.get("possible_issues", []),
-        vulnerabilities=vulnerabilities,
+        findings=separated_results.get("confirmed_vulnerabilities", []),
+        vulnerabilities=[x.get("title") for x in separated_results.get("confirmed_vulnerabilities", [])],
         score=score
     )
 
@@ -3435,14 +3458,16 @@ async def analyze(target, profile="full"):
         "advanced_exposures": advanced_exposures,
         "graphql_introspection": graphql_introspection,
         "real_validation": real_validation,
-        "vulnerabilities": vulnerabilities,
+        "vulnerabilities": [x.get("title") for x in separated_results.get("confirmed_vulnerabilities", [])],
         "vulnerability_checks": vulnerability_checks,
         "findings": findings,
         "separated_results": separated_results,
         "confirmed_vulnerabilities": separated_results.get("confirmed_vulnerabilities", []),
         "possible_issues": separated_results.get("possible_issues", []),
+        "hardening_issues": separated_results.get("hardening_issues", []),
+        "attack_surface": separated_results.get("attack_surface", []),
         "informational_findings": separated_results.get("informational_findings", []),
-        "alerts": alerts,
+        "alerts": [x.get("title") for x in separated_results.get("confirmed_vulnerabilities", [])],
         "structured": structured,
         "scan_summary": scan_summary,
         "detection_summary": detection_summary,
