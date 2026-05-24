@@ -70,6 +70,93 @@ SENSITIVE_PATHS = [
     "/wp-admin"
 ]
 
+ADVANCED_EXPOSURE_PATHS = [
+    {
+        "path": "/docs",
+        "type": "Swagger / FastAPI Docs",
+        "category": "API Documentation",
+        "risk_if_public": "HIGH",
+        "keywords": ["swagger ui", "openapi", "fastapi", "api documentation"]
+    },
+    {
+        "path": "/redoc",
+        "type": "ReDoc API Docs",
+        "category": "API Documentation",
+        "risk_if_public": "HIGH",
+        "keywords": ["redoc", "openapi"]
+    },
+    {
+        "path": "/openapi.json",
+        "type": "OpenAPI Schema",
+        "category": "API Documentation",
+        "risk_if_public": "HIGH",
+        "keywords": ["openapi", "paths", "components", "schemas"]
+    },
+    {
+        "path": "/swagger",
+        "type": "Swagger Endpoint",
+        "category": "API Documentation",
+        "risk_if_public": "HIGH",
+        "keywords": ["swagger", "openapi"]
+    },
+    {
+        "path": "/swagger-ui.html",
+        "type": "Swagger UI",
+        "category": "API Documentation",
+        "risk_if_public": "HIGH",
+        "keywords": ["swagger ui", "openapi"]
+    },
+    {
+        "path": "/graphql",
+        "type": "GraphQL Endpoint",
+        "category": "GraphQL",
+        "risk_if_public": "MEDIUM",
+        "keywords": ["graphql", "query", "mutation", "errors"]
+    },
+    {
+        "path": "/graphiql",
+        "type": "GraphiQL Console",
+        "category": "GraphQL",
+        "risk_if_public": "HIGH",
+        "keywords": ["graphiql", "graphql"]
+    },
+    {
+        "path": "/admin",
+        "type": "Admin Panel",
+        "category": "Admin/Auth",
+        "risk_if_public": "MEDIUM",
+        "keywords": ["admin", "dashboard", "login", "password", "sign in"]
+    },
+    {
+        "path": "/admin/",
+        "type": "Admin Panel",
+        "category": "Admin/Auth",
+        "risk_if_public": "MEDIUM",
+        "keywords": ["admin", "dashboard", "login", "password", "sign in"]
+    },
+    {
+        "path": "/login",
+        "type": "Login Page",
+        "category": "Admin/Auth",
+        "risk_if_public": "INFO",
+        "keywords": ["login", "password", "username", "sign in"]
+    },
+    {
+        "path": "/debug",
+        "type": "Debug Endpoint",
+        "category": "Debug",
+        "risk_if_public": "HIGH",
+        "keywords": ["debug", "traceback", "stack trace", "exception", "environment"]
+    },
+    {
+        "path": "/api/docs",
+        "type": "API Docs",
+        "category": "API Documentation",
+        "risk_if_public": "HIGH",
+        "keywords": ["swagger", "openapi", "api"]
+    }
+]
+
 SENSITIVE_ROBOTS_KEYWORDS = [
     "admin",
     "backup",
@@ -1085,6 +1172,202 @@ async def discover_api_endpoints(client, response):
 
 
 
+def classify_exposure_status(res, item):
+    if not res:
+        return None
+
+    status_code = res.status_code
+    body = (res.text or "").lower()[:6000]
+    headers = str(res.headers).lower()
+
+    if status_code in [401, 403]:
+        return {
+            "path": item["path"],
+            "type": item["type"],
+            "category": item["category"],
+            "severity": "INFO",
+            "status_code": status_code,
+            "status": "PROTECTED",
+            "confidence": "HIGH",
+            "evidence_type": "status_code",
+            "evidence": f"HTTP {status_code} indicates access control is present.",
+            "fix": "Protected endpoint detected. Keep authentication and authorization enabled."
+        }
+
+    if status_code in [404, 410]:
+        return None
+
+    keyword_hits = [
+        kw for kw in item.get("keywords", [])
+        if kw.lower() in body or kw.lower() in headers
+    ]
+
+    # OpenAPI JSON is strong evidence if public and parse-like response exists
+    if item["path"].endswith("openapi.json") and status_code == 200:
+        if "openapi" in body and "paths" in body:
+            return {
+                "path": item["path"],
+                "type": item["type"],
+                "category": item["category"],
+                "severity": "HIGH",
+                "status_code": status_code,
+                "status": "POSSIBLE",
+                "confidence": "HIGH",
+                "evidence_type": "public_schema",
+                "evidence": "OpenAPI schema appears publicly accessible.",
+                "fix": "Restrict OpenAPI schema in production or protect it behind authentication."
+            }
+
+    if status_code == 200 and keyword_hits:
+        severity = item.get("risk_if_public", "INFO")
+
+        # Login pages are generally attack surface, not vulnerabilities
+        if item["category"] == "Admin/Auth" and item["type"] == "Login Page":
+            severity = "INFO"
+
+        return {
+            "path": item["path"],
+            "type": item["type"],
+            "category": item["category"],
+            "severity": severity,
+            "status_code": status_code,
+            "status": "POSSIBLE" if severity in ["HIGH", "MEDIUM"] else "INFO",
+            "confidence": "HIGH" if len(keyword_hits) >= 2 else "MEDIUM",
+            "evidence_type": "keyword_status_match",
+            "evidence": f"HTTP 200 with indicators: {', '.join(keyword_hits[:5])}",
+            "fix": "Review whether this endpoint should be public. Add authentication, IP allowlisting, or disable it in production."
+        }
+
+    if status_code in [301, 302, 307, 308]:
+        location = res.headers.get("location", "")
+        return {
+            "path": item["path"],
+            "type": item["type"],
+            "category": item["category"],
+            "severity": "INFO",
+            "status_code": status_code,
+            "status": "INFO",
+            "confidence": "MEDIUM",
+            "evidence_type": "redirect",
+            "evidence": f"Redirects to {location}",
+            "fix": "Verify redirected endpoint is intended and protected if sensitive."
+        }
+
+    return None
+
+
+async def check_advanced_exposures(client, base_url):
+    results = []
+
+    tasks = []
+    for item in ADVANCED_EXPOSURE_PATHS:
+        url = base_url.rstrip("/") + item["path"]
+        tasks.append((item, url, safe_get(client, url)))
+
+    responses = await asyncio.gather(*[task for _, _, task in tasks])
+
+    for (item, url, _), res in zip(tasks, responses):
+        finding = classify_exposure_status(res, item)
+
+        if finding:
+            finding["url"] = str(res.url) if res else url
+            results.append(finding)
+
+    return dedupe_dicts(results, ["path", "type", "status_code"])
+
+
+async def check_graphql_introspection(client, base_url):
+    url = base_url.rstrip("/") + "/graphql"
+
+    query = {
+        "query": "{ __schema { queryType { name } mutationType { name } types { name } } }"
+    }
+
+    try:
+        res = await client.post(url, json=query, timeout=6)
+
+        if res.status_code in [404, 405]:
+            return None
+
+        text = res.text.lower()
+
+        if res.status_code == 200 and "__schema" in text and "querytype" in text:
+            return {
+                "endpoint": "/graphql",
+                "url": str(res.url),
+                "enabled": True,
+                "severity": "HIGH",
+                "status": "POSSIBLE",
+                "confidence": "HIGH",
+                "evidence_type": "graphql_introspection",
+                "evidence": "GraphQL introspection appears enabled publicly.",
+                "fix": "Disable GraphQL introspection in production unless explicitly needed and protected."
+            }
+
+        if res.status_code in [401, 403]:
+            return {
+                "endpoint": "/graphql",
+                "url": str(res.url),
+                "enabled": False,
+                "severity": "INFO",
+                "status": "PROTECTED",
+                "confidence": "HIGH",
+                "evidence_type": "status_code",
+                "evidence": f"GraphQL endpoint returned HTTP {res.status_code}.",
+                "fix": "GraphQL endpoint appears protected. Keep access controls enabled."
+            }
+
+    except Exception:
+        return None
+
+    return None
+
+
+def classify_api_endpoint(endpoint):
+    e = str(endpoint or "").lower()
+
+    if any(x in e for x in ["swagger", "openapi", "docs", "redoc"]):
+        return {
+            "category": "API Documentation",
+            "severity": "MEDIUM",
+            "status": "POSSIBLE",
+            "confidence": "MEDIUM"
+        }
+
+    if any(x in e for x in ["admin", "internal", "private", "debug"]):
+        return {
+            "category": "Sensitive API",
+            "severity": "LOW",
+            "status": "INFO",
+            "confidence": "LOW"
+        }
+
+    if any(x in e for x in ["login", "auth", "token", "session"]):
+        return {
+            "category": "Auth API",
+            "severity": "INFO",
+            "status": "INFO",
+            "confidence": "MEDIUM"
+        }
+
+    if "graphql" in e:
+        return {
+            "category": "GraphQL",
+            "severity": "MEDIUM",
+            "status": "POSSIBLE",
+            "confidence": "MEDIUM"
+        }
+
+    return {
+        "category": "API Endpoint",
+        "severity": "INFO",
+        "status": "INFO",
+        "confidence": "LOW"
+    }
+
+
+
+
 async def fetch_cves_for_keyword(client, keyword):
     cves = []
 
@@ -1698,6 +1981,18 @@ async def analyze(target, profile="full"):
             else asyncio.sleep(0, result=[])
         )
 
+        advanced_exposure_task = (
+            check_advanced_exposures(client, url)
+            if profile in ["full", "deep"]
+            else asyncio.sleep(0, result=[])
+        )
+
+        graphql_introspection_task = (
+            check_graphql_introspection(client, url)
+            if profile in ["full", "deep"]
+            else asyncio.sleep(0, result=None)
+        )
+
         ports_task = asyncio.gather(*[
             check_port(host, port)
             for port in list(set(COMMON_PORTS + RISKY_PORTS))
@@ -1718,6 +2013,8 @@ async def analyze(target, profile="full"):
             whois_asn,
             subdomains,
             nikto_checks,
+            advanced_exposures,
+            graphql_introspection,
             ports_result,
             sensitive_result
         ) = await asyncio.gather(
@@ -1730,6 +2027,8 @@ async def analyze(target, profile="full"):
             whois_asn_task,
             subdomains_task,
             nikto_task,
+            advanced_exposure_task,
+            graphql_introspection_task,
             ports_task,
             sensitive_task
         )
@@ -1762,6 +2061,10 @@ async def analyze(target, profile="full"):
             if response and profile in ["full", "deep"]
             else []
         )
+
+        for endpoint in api_endpoints:
+            classification = classify_api_endpoint(endpoint.get("endpoint"))
+            endpoint.update(classification)
 
         if not response:
             score += 25
@@ -2080,19 +2383,16 @@ async def analyze(target, profile="full"):
                 )
 
                 for endpoint in api_endpoints[:15]:
-
-                    if endpoint.get("severity") == "MEDIUM":
-                        score += 1
-
-                        add_vuln(
-                            vulnerability_checks,
-                            "Sensitive API Endpoint Discovered",
-                            "LOW",
-                            endpoint.get("endpoint"),
-                            "Potentially sensitive API or admin endpoint discovered in frontend content.",
-                            "Protect internal/admin/debug endpoints and disable unused public APIs.",
+                    if endpoint.get("severity") in ["HIGH", "MEDIUM"]:
+                        add_finding(
+                            findings,
+                            f"{endpoint.get('category', 'API Endpoint')} Reference Discovered",
+                            endpoint.get("severity", "INFO"),
+                            "A potentially sensitive API reference was discovered in frontend content.",
+                            "Verify the endpoint requires authentication and remove unused internal references from public JavaScript.",
                             "Attack Surface",
-                            "LOW",
+                            endpoint.get("endpoint"),
+                            endpoint.get("confidence", "LOW"),
                             "frontend_reference"
                         )
 
@@ -2336,6 +2636,75 @@ async def analyze(target, profile="full"):
             item.get("url")
         )
 
+    for exposure in advanced_exposures:
+        title = f"{exposure.get('type')} Detected"
+
+        if exposure.get("status") == "PROTECTED":
+            add_finding(
+                findings,
+                title,
+                "INFO",
+                "A sensitive or administrative endpoint exists but appears protected.",
+                exposure.get("fix"),
+                exposure.get("category", "Attack Surface"),
+                exposure.get("evidence"),
+                exposure.get("confidence", "HIGH"),
+                exposure.get("evidence_type", "status_code")
+            )
+            continue
+
+        add_finding(
+            findings,
+            title,
+            exposure.get("severity", "INFO"),
+            "A sensitive, administrative, debug, API documentation, or GraphQL endpoint may be publicly reachable.",
+            exposure.get("fix"),
+            exposure.get("category", "Attack Surface"),
+            f"{exposure.get('url')} | {exposure.get('evidence')}",
+            exposure.get("confidence", "MEDIUM"),
+            exposure.get("evidence_type", "status_match")
+        )
+
+        if exposure.get("severity") in ["HIGH", "MEDIUM"]:
+            add_vuln(
+                vulnerability_checks,
+                title,
+                exposure.get("severity"),
+                f"{exposure.get('url')} | HTTP {exposure.get('status_code')} | {exposure.get('evidence')}",
+                "Publicly exposed sensitive endpoints may increase attack surface and leak internal API structure.",
+                exposure.get("fix"),
+                exposure.get("category", "Attack Surface"),
+                exposure.get("confidence", "MEDIUM"),
+                exposure.get("evidence_type", "status_match")
+            )
+
+    if graphql_introspection:
+        add_finding(
+            findings,
+            "GraphQL Introspection Check",
+            graphql_introspection.get("severity", "INFO"),
+            "GraphQL introspection status was tested.",
+            graphql_introspection.get("fix"),
+            "GraphQL",
+            graphql_introspection.get("evidence"),
+            graphql_introspection.get("confidence", "MEDIUM"),
+            graphql_introspection.get("evidence_type", "graphql")
+        )
+
+        if graphql_introspection.get("enabled"):
+            add_vuln(
+                vulnerability_checks,
+                "GraphQL Introspection Enabled",
+                graphql_introspection.get("severity", "HIGH"),
+                graphql_introspection.get("evidence"),
+                "Public GraphQL introspection can reveal schema structure and help attackers map the API.",
+                graphql_introspection.get("fix"),
+                "GraphQL",
+                graphql_introspection.get("confidence", "HIGH"),
+                graphql_introspection.get("evidence_type", "graphql_introspection")
+            )
+
+
     risky_open = [
         p for p in open_ports
         if p.get("port") in RISKY_PORTS
@@ -2531,6 +2900,8 @@ async def analyze(target, profile="full"):
         "http_methods": http_methods,
         "js_secrets": js_secrets,
         "api_endpoints": api_endpoints,
+        "advanced_exposures": advanced_exposures,
+        "graphql_introspection": graphql_introspection,
         "vulnerabilities": vulnerabilities,
         "vulnerability_checks": vulnerability_checks,
         "findings": findings,
