@@ -3,7 +3,8 @@ import socket
 import ssl
 import httpx
 import dns.resolver
-from urllib.parse import urlparse
+import re
+from urllib.parse import urlparse, urljoin
 
 
 COMMON_PORTS = [21, 22, 25, 53, 80, 110, 143, 443, 8080, 8443]
@@ -828,6 +829,146 @@ async def check_security_txt(client, base_url):
     return result
 
 
+def mask_secret(value):
+    value = str(value or "").strip()
+
+    if len(value) <= 10:
+        return "***"
+
+    return value[:6] + "..." + value[-4:]
+
+
+def extract_js_urls(base_url, html):
+    js_urls = []
+    html = html or ""
+
+    patterns = [
+        r'<script[^>]+src=["\']([^"\']+\.js[^"\']*)["\']',
+        r'href=["\']([^"\']+\.js[^"\']*)["\']'
+    ]
+
+    for pattern in patterns:
+        for match in re.findall(pattern, html, flags=re.IGNORECASE):
+            try:
+                full_url = urljoin(str(base_url), match)
+                if full_url not in js_urls:
+                    js_urls.append(full_url)
+            except Exception:
+                pass
+
+    return js_urls[:12]
+
+
+def detect_js_secrets(js_text, js_url):
+    findings = []
+
+    secret_patterns = [
+        {
+            "type": "AWS Access Key",
+            "severity": "HIGH",
+            "regex": r"AKIA[0-9A-Z]{16}",
+            "fix": "Remove AWS keys from frontend JavaScript. Rotate the exposed key and move secrets to backend environment variables."
+        },
+        {
+            "type": "Google API Key",
+            "severity": "MEDIUM",
+            "regex": r"AIza[0-9A-Za-z\-_]{35}",
+            "fix": "Restrict the Google API key by domain/IP and move sensitive usage to the backend where possible."
+        },
+        {
+            "type": "Firebase API Key",
+            "severity": "MEDIUM",
+            "regex": r"apiKey\s*[:=]\s*[\"']([^\"']{20,})[\"']",
+            "fix": "Review Firebase rules. Public Firebase config is common, but database/storage rules must be locked down."
+        },
+        {
+            "type": "Private Key Marker",
+            "severity": "CRITICAL",
+            "regex": r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----",
+            "fix": "Immediately remove private keys from public files, rotate affected credentials, and redeploy."
+        },
+        {
+            "type": "Bearer Token",
+            "severity": "HIGH",
+            "regex": r"Bearer\s+[A-Za-z0-9\-\._~\+\/]+=*",
+            "fix": "Do not expose bearer tokens in frontend code. Rotate the token and store it server-side."
+        },
+        {
+            "type": "GitHub Token",
+            "severity": "HIGH",
+            "regex": r"gh[pousr]_[A-Za-z0-9_]{20,}",
+            "fix": "Revoke the GitHub token immediately and remove it from public JavaScript."
+        },
+        {
+            "type": "Slack Token",
+            "severity": "HIGH",
+            "regex": r"xox[baprs]-[A-Za-z0-9\-]{20,}",
+            "fix": "Revoke the Slack token and move it to backend-only configuration."
+        },
+        {
+            "type": "Possible Secret Assignment",
+            "severity": "MEDIUM",
+            "regex": r"(?:secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)\s*[:=]\s*[\"']([^\"']{12,})[\"']",
+            "fix": "Review this value. If it is a real secret, rotate it and move it to backend environment variables."
+        }
+    ]
+
+    for rule in secret_patterns:
+        try:
+            matches = re.findall(rule["regex"], js_text, flags=re.IGNORECASE)
+
+            for match in matches[:5]:
+                value = match[0] if isinstance(match, tuple) else match
+
+                findings.append({
+                    "type": rule["type"],
+                    "severity": rule["severity"],
+                    "url": js_url,
+                    "evidence": mask_secret(value),
+                    "fix": rule["fix"]
+                })
+
+        except Exception:
+            continue
+
+    return findings
+
+
+async def check_js_secrets(client, response):
+    results = []
+
+    if not response:
+        return results
+
+    js_urls = extract_js_urls(response.url, response.text)
+
+    if not js_urls:
+        return results
+
+    tasks = [
+        safe_get(client, js_url)
+        for js_url in js_urls
+    ]
+
+    responses = await asyncio.gather(*tasks)
+
+    for js_url, js_res in zip(js_urls, responses):
+        if not js_res or js_res.status_code != 200:
+            continue
+
+        content_type = js_res.headers.get("content-type", "").lower()
+
+        if "javascript" not in content_type and not str(js_url).lower().split("?")[0].endswith(".js"):
+            continue
+
+        js_text = js_res.text[:250000]
+        results.extend(detect_js_secrets(js_text, js_url))
+
+    return dedupe_dicts(results, ["type", "url", "evidence"])
+
+
+
+
 async def fetch_cves_for_keyword(client, keyword):
     cves = []
 
@@ -1273,6 +1414,12 @@ async def analyze(target, profile="full"):
             else []
         )
 
+        js_secrets = (
+            await check_js_secrets(client, response)
+            if response and profile in ["full", "deep"]
+            else []
+        )
+
         if not response:
             score += 25
             alerts.append("Website is not reachable")
@@ -1535,6 +1682,31 @@ async def analyze(target, profile="full"):
                 )
 
             page_text = response.text.lower()
+
+            if js_secrets:
+                score += min(30, len(js_secrets) * 8)
+                vulnerabilities.append("Possible secrets exposed in JavaScript files")
+
+                for secret in js_secrets[:8]:
+                    add_vuln(
+                        vulnerability_checks,
+                        f"Possible JS Secret Exposure: {secret.get('type')}",
+                        secret.get("severity", "MEDIUM"),
+                        f"{secret.get('url')} | Evidence: {secret.get('evidence')}",
+                        "Public JavaScript appears to contain a value that may be sensitive.",
+                        secret.get("fix"),
+                        "JavaScript Secrets"
+                    )
+
+                    add_finding(
+                        findings,
+                        f"Possible JS Secret Exposure: {secret.get('type')}",
+                        secret.get("severity", "MEDIUM"),
+                        "A public JavaScript file appears to contain a possible secret or credential-like value.",
+                        secret.get("fix"),
+                        "JavaScript Secrets",
+                        f"{secret.get('url')} | Evidence: {secret.get('evidence')}"
+                    )
 
             test_payloads = [
                 "' OR '1'='1",
@@ -1946,6 +2118,7 @@ async def analyze(target, profile="full"):
         "cve_results": cve_results,
         "waf": waf,
         "http_methods": http_methods,
+        "js_secrets": js_secrets,
         "vulnerabilities": vulnerabilities,
         "vulnerability_checks": vulnerability_checks,
         "findings": findings,
