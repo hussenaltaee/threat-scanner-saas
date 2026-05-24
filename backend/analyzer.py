@@ -1368,6 +1368,243 @@ def classify_api_endpoint(endpoint):
 
 
 
+def normalize_body_for_diff(body):
+    body = str(body or "")
+    body = re.sub(r"\s+", " ", body)
+    body = re.sub(r"\d{2,}", "N", body)
+    body = re.sub(r"[a-f0-9]{16,}", "HASH", body, flags=re.IGNORECASE)
+    return body[:50000]
+
+
+def response_fingerprint(res):
+    if not res:
+        return {
+            "status_code": None,
+            "length": 0,
+            "word_count": 0,
+            "title": None,
+            "body": ""
+        }
+
+    body = normalize_body_for_diff(res.text)
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", body, re.IGNORECASE)
+
+    return {
+        "status_code": res.status_code,
+        "length": len(body),
+        "word_count": len(body.split()),
+        "title": title_match.group(1).strip() if title_match else None,
+        "body": body
+    }
+
+
+def diff_score(base_fp, test_fp):
+    if not base_fp or not test_fp:
+        return 0
+
+    score = 0
+
+    if base_fp.get("status_code") != test_fp.get("status_code"):
+        score += 30
+
+    base_len = max(base_fp.get("length", 0), 1)
+    test_len = test_fp.get("length", 0)
+    ratio = abs(base_len - test_len) / base_len
+
+    if ratio > 0.45:
+        score += 35
+    elif ratio > 0.25:
+        score += 25
+    elif ratio > 0.12:
+        score += 12
+
+    if base_fp.get("title") != test_fp.get("title"):
+        score += 10
+
+    return min(score, 100)
+
+
+def contains_sql_error(body):
+    body = str(body or "").lower()
+
+    patterns = [
+        "sql syntax",
+        "mysql_fetch",
+        "mysql error",
+        "syntax error",
+        "unclosed quotation",
+        "odbc sql",
+        "postgresql",
+        "sqlite error",
+        "sqlstate",
+        "you have an error in your sql syntax",
+        "warning: mysql",
+        "ora-",
+        "microsoft ole db",
+        "native client",
+        "database error",
+        "pg_query"
+    ]
+
+    return any(pattern in body for pattern in patterns)
+
+
+def reflected_context(body, payload):
+    body = str(body or "")
+    payload = str(payload or "")
+
+    if payload not in body:
+        return None
+
+    index = body.find(payload)
+    start = max(0, index - 80)
+    end = min(len(body), index + len(payload) + 80)
+    context = body[start:end]
+
+    if "<script" in context.lower():
+        return "script_context"
+
+    if "href=" in context.lower() or "src=" in context.lower():
+        return "attribute_context"
+
+    if "<" in context and ">" in context:
+        return "html_context"
+
+    return "text_context"
+
+
+async def validate_sqli_behavior(client, base_url):
+    results = []
+
+    baseline = await safe_get(client, base_url)
+    if not baseline:
+        return results
+
+    base_fp = response_fingerprint(baseline)
+
+    payload_pairs = [
+        ("' OR '1'='1", "' OR '1'='2"),
+        ("1 OR 1=1", "1 OR 1=2")
+    ]
+
+    for truthy, falsy in payload_pairs:
+        try:
+            true_url = base_url + ("&" if "?" in base_url else "?") + "scan_test=" + truthy
+            false_url = base_url + ("&" if "?" in base_url else "?") + "scan_test=" + falsy
+
+            true_res, false_res = await asyncio.gather(
+                safe_get(client, true_url),
+                safe_get(client, false_url)
+            )
+
+            if not true_res or not false_res:
+                continue
+
+            true_fp = response_fingerprint(true_res)
+            false_fp = response_fingerprint(false_res)
+
+            true_diff = diff_score(base_fp, true_fp)
+            false_diff = diff_score(base_fp, false_fp)
+            pair_delta = abs(true_fp["length"] - false_fp["length"])
+
+            sql_error = contains_sql_error(true_res.text) or contains_sql_error(false_res.text)
+
+            if sql_error:
+                results.append({
+                    "type": "SQL Error Pattern",
+                    "severity": "MEDIUM",
+                    "status": "POSSIBLE",
+                    "confidence": "MEDIUM",
+                    "evidence_type": "database_error_pattern",
+                    "evidence": f"Database error pattern observed with payload pair: {truthy} / {falsy}",
+                    "fix": "Use parameterized queries and suppress detailed database errors in production."
+                })
+
+            elif true_diff >= 25 and false_diff >= 25 and pair_delta > 80:
+                results.append({
+                    "type": "Behavioral SQLi Difference",
+                    "severity": "MEDIUM",
+                    "status": "POSSIBLE",
+                    "confidence": "LOW",
+                    "evidence_type": "response_diff",
+                    "evidence": f"Truthy/falsy payloads changed response characteristics. Length delta: {pair_delta}",
+                    "fix": "Manually verify parameter handling. Use parameterized queries and strong input validation."
+                })
+
+        except Exception:
+            continue
+
+    return dedupe_dicts(results, ["type", "evidence_type"])
+
+
+async def validate_xss_reflection(client, base_url):
+    results = []
+
+    payloads = [
+        "xsstest123",
+        "<svg/onload=alert(1)>"
+    ]
+
+    for payload in payloads:
+        try:
+            test_url = base_url + ("&" if "?" in base_url else "?") + "scan_xss=" + payload
+            res = await safe_get(client, test_url)
+
+            if not res:
+                continue
+
+            context = reflected_context(res.text, payload)
+
+            if not context:
+                continue
+
+            severity = "LOW"
+            confidence = "LOW"
+            status = "INFO"
+
+            if context in ["script_context", "attribute_context", "html_context"] and payload.startswith("<svg"):
+                severity = "MEDIUM"
+                confidence = "MEDIUM"
+                status = "POSSIBLE"
+
+            results.append({
+                "type": "Reflected Input",
+                "severity": severity,
+                "status": status,
+                "confidence": confidence,
+                "evidence_type": context,
+                "evidence": f"Payload reflected in {context}: {payload}",
+                "fix": "Escape output based on context, sanitize input, and use a strong Content-Security-Policy."
+            })
+
+        except Exception:
+            continue
+
+    return dedupe_dicts(results, ["type", "evidence_type"])
+
+
+async def run_real_validation_engine(client, response):
+    if not response:
+        return {
+            "sqli": [],
+            "xss": []
+        }
+
+    base_url = str(response.url)
+
+    sqli_results, xss_results = await asyncio.gather(
+        validate_sqli_behavior(client, base_url),
+        validate_xss_reflection(client, base_url)
+    )
+
+    return {
+        "sqli": sqli_results,
+        "xss": xss_results
+    }
+
+
+
+
 async def fetch_cves_for_keyword(client, keyword):
     cves = []
 
@@ -2066,6 +2303,12 @@ async def analyze(target, profile="full"):
             classification = classify_api_endpoint(endpoint.get("endpoint"))
             endpoint.update(classification)
 
+        real_validation = (
+            await run_real_validation_engine(client, response)
+            if response and profile in ["full", "deep"]
+            else {"sqli": [], "xss": []}
+        )
+
         if not response:
             score += 25
             alerts.append("Website is not reachable")
@@ -2395,100 +2638,60 @@ async def analyze(target, profile="full"):
                             endpoint.get("confidence", "LOW"),
                             "frontend_reference"
                         )
+            # Real validation engine replaces simple keyword-only SQLi/XSS checks.
+            # Results are processed later with response diffing and reflection context.
 
-            test_payloads = [
-                "' OR '1'='1",
-                "<script>alert(1)</script>"
-            ]
+            for item in real_validation.get("sqli", []):
+                add_vuln(
+                    vulnerability_checks,
+                    item.get("type", "SQL Injection Indicator"),
+                    item.get("severity", "MEDIUM"),
+                    item.get("evidence"),
+                    "The scanner observed behavior that may indicate unsafe database input handling.",
+                    item.get("fix"),
+                    "Injection",
+                    item.get("confidence", "LOW"),
+                    item.get("evidence_type", "response_diff")
+                )
 
-            for payload in test_payloads:
-                try:
-                    test_url = str(response.url)
+                add_finding(
+                    findings,
+                    item.get("type", "SQL Injection Indicator"),
+                    item.get("severity", "MEDIUM"),
+                    "Evidence-based SQL injection validation produced a suspicious result.",
+                    item.get("fix"),
+                    "Injection",
+                    item.get("evidence"),
+                    item.get("confidence", "LOW"),
+                    item.get("evidence_type", "response_diff")
+                )
 
-                    if "?" in test_url:
-                        test_url = test_url + "&scan_test=" + payload
-                    else:
-                        test_url = test_url + "?scan_test=" + payload
+            for item in real_validation.get("xss", []):
+                add_finding(
+                    findings,
+                    item.get("type", "Reflected Input"),
+                    item.get("severity", "INFO"),
+                    "Input reflection was tested with context analysis.",
+                    item.get("fix"),
+                    "XSS",
+                    item.get("evidence"),
+                    item.get("confidence", "LOW"),
+                    item.get("evidence_type", "reflection")
+                )
 
-                    test_res = await safe_get(client, test_url)
+                if item.get("status") == "POSSIBLE":
+                    add_vuln(
+                        vulnerability_checks,
+                        "Possible Reflected XSS",
+                        item.get("severity", "MEDIUM"),
+                        item.get("evidence"),
+                        "The payload was reflected in a potentially executable HTML context.",
+                        item.get("fix"),
+                        "XSS",
+                        item.get("confidence", "MEDIUM"),
+                        item.get("evidence_type", "reflection_context")
+                    )
 
-                    if not test_res:
-                        continue
-
-                    body = test_res.text.lower()
-
-                    sqli_patterns = [
-                        "sql syntax",
-                        "mysql_fetch",
-                        "mysql error",
-                        "syntax error",
-                        "unclosed quotation",
-                        "odbc sql",
-                        "postgresql",
-                        "sqlite error",
-                        "sqlstate",
-                        "you have an error in your sql syntax",
-                        "warning: mysql",
-                        "ora-",
-                        "microsoft ole db"
-                    ]
-
-                    if any(pattern in body for pattern in sqli_patterns):
-                        score += 25
-
-                        vulnerabilities.append(
-                            "Possible SQL Injection behavior detected"
-                        )
-
-                        add_vuln(
-                            vulnerability_checks,
-                            "Possible SQL Injection",
-                            "MEDIUM",
-                            payload,
-                            "Database error patterns were detected after a safe test payload was sent.",
-                            "Use parameterized queries, server-side validation, and avoid showing database errors to users.",
-                            "Injection"
-                        )
-
-                        add_finding(
-                            findings,
-                            "Possible SQL Injection",
-                            "MEDIUM",
-                            "The application returned SQL-related error patterns after a safe test payload.",
-                            "Use parameterized queries and sanitize user input. Disable detailed database errors in production.",
-                            "Injection",
-                            payload
-                        )
-
-                    if payload.lower() in body:
-                        score += 15
-
-                        vulnerabilities.append(
-                            "Possible reflected XSS behavior detected"
-                        )
-
-                        add_vuln(
-                            vulnerability_checks,
-                            "Possible Reflected XSS",
-                            "LOW",
-                            payload,
-                            "The test payload was reflected in the HTTP response.",
-                            "Escape output, sanitize user-controlled input, and apply a strong Content-Security-Policy.",
-                            "XSS"
-                        )
-
-                        add_finding(
-                            findings,
-                            "Possible Reflected XSS",
-                            "LOW",
-                            "User-controlled input appears to be reflected in the response.",
-                            "Escape HTML output, validate input, and add a strong Content-Security-Policy header.",
-                            "XSS",
-                            payload
-                        )
-
-                except Exception:
-                    pass
 
             if "index of /" in page_text or "directory listing" in page_text:
                 score += 30
@@ -2902,6 +3105,7 @@ async def analyze(target, profile="full"):
         "api_endpoints": api_endpoints,
         "advanced_exposures": advanced_exposures,
         "graphql_introspection": graphql_introspection,
+        "real_validation": real_validation,
         "vulnerabilities": vulnerabilities,
         "vulnerability_checks": vulnerability_checks,
         "findings": findings,
