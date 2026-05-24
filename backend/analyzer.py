@@ -1320,6 +1320,86 @@ def build_structured_storage(findings, vulnerability_checks, subdomains, cve_res
     }
 
 
+def build_fix_plan(findings):
+    severity_order = {
+        "CRITICAL": 0,
+        "HIGH": 1,
+        "MEDIUM": 2,
+        "LOW": 3,
+        "INFO": 4
+    }
+
+    critical_actions = []
+    quick_wins = []
+    top_issues = []
+
+    sorted_findings = sorted(
+        findings,
+        key=lambda x: severity_order.get(str(x.get("severity", "INFO")).upper(), 99)
+    )
+
+    for item in sorted_findings[:10]:
+        entry = {
+            "title": item.get("title"),
+            "severity": item.get("severity"),
+            "fix": item.get("fix"),
+            "category": item.get("category")
+        }
+
+        top_issues.append(entry)
+
+        sev = str(item.get("severity", "INFO")).upper()
+
+        if sev in ["CRITICAL", "HIGH"]:
+            critical_actions.append(entry)
+
+        elif sev in ["LOW", "MEDIUM"]:
+            quick_wins.append(entry)
+
+    return {
+        "top_issues": top_issues[:5],
+        "critical_actions": critical_actions[:5],
+        "quick_wins": quick_wins[:5]
+    }
+
+
+def explain_score(findings, vulnerabilities, score):
+    factors = []
+
+    severity_weights = {
+        "CRITICAL": 25,
+        "HIGH": 18,
+        "MEDIUM": 10,
+        "LOW": 5
+    }
+
+    for item in findings[:20]:
+        sev = str(item.get("severity", "INFO")).upper()
+
+        if sev not in severity_weights:
+            continue
+
+        factors.append({
+            "reason": item.get("title"),
+            "severity": sev,
+            "score_impact": severity_weights.get(sev, 0)
+        })
+
+    factors = sorted(
+        factors,
+        key=lambda x: x["score_impact"],
+        reverse=True
+    )
+
+    return {
+        "final_score": score,
+        "risk_drivers": factors[:8],
+        "total_vulnerabilities": len(vulnerabilities)
+    }
+
+
+
+
 async def analyze(target, profile="full"):
     profile = profile.lower()
 
@@ -2208,6 +2288,14 @@ async def analyze(target, profile="full"):
         **summary_counts
     }
 
+    remediation_plan = build_fix_plan(findings)
+
+    score_explanation = explain_score(
+        findings=findings,
+        vulnerabilities=vulnerabilities,
+        score=score
+    )
+
     return {
         "target": target,
         "host": host,
@@ -2249,5 +2337,7 @@ async def analyze(target, profile="full"):
         "findings": findings,
         "alerts": alerts,
         "structured": structured,
-        "scan_summary": scan_summary
+        "scan_summary": scan_summary,
+        "remediation_plan": remediation_plan,
+        "score_explanation": score_explanation
     }
