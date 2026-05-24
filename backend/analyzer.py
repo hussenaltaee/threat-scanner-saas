@@ -4,6 +4,7 @@ import ssl
 import httpx
 import dns.resolver
 import re
+import ipaddress
 from urllib.parse import urlparse, urljoin
 
 
@@ -308,17 +309,71 @@ def add_vuln(
     })
 
 
+def is_ip_address(value):
+    try:
+        ipaddress.ip_address(str(value).strip())
+        return True
+    except Exception:
+        return False
+
+
 def normalize_target(target):
-    target = target.strip()
+    target = str(target or "").strip()
 
-    if not target.startswith("http://") and not target.startswith("https://"):
-        return "https://" + target
+    if not target:
+        return target
 
-    return target
+    if target.startswith("http://") or target.startswith("https://"):
+        return target
+
+    return "https://" + target
 
 
 def get_hostname(target):
     return urlparse(normalize_target(target)).hostname
+
+
+def get_target_type(host):
+    return "ip" if is_ip_address(host) else "domain"
+
+
+def get_http_candidates(target):
+    normalized = normalize_target(target)
+    parsed = urlparse(normalized)
+
+    if not parsed.hostname:
+        return []
+
+    host = parsed.hostname
+    port = f":{parsed.port}" if parsed.port else ""
+    path = parsed.path if parsed.path else ""
+
+    if parsed.query:
+        path += "?" + parsed.query
+
+    first_scheme = parsed.scheme or "https"
+    second_scheme = "http" if first_scheme == "https" else "https"
+
+    candidates = [
+        f"{first_scheme}://{host}{port}{path}",
+        f"{second_scheme}://{host}{port}{path}"
+    ]
+
+    output = []
+    for item in candidates:
+        if item not in output:
+            output.append(item)
+
+    return output
+
+
+async def get_best_response(client, target):
+    for candidate in get_http_candidates(target):
+        res = await safe_get(client, candidate)
+        if res:
+            return res
+
+    return None
 
 
 def severity_points(severity):
@@ -519,6 +574,29 @@ async def check_dns_security(host):
         return result
 
     return await asyncio.to_thread(dns_job)
+
+
+async def check_reverse_dns(ip):
+    result = {
+        "ip": ip,
+        "reverse_dns": None,
+        "error": None
+    }
+
+    if not is_ip_address(ip):
+        result["error"] = "Target is not an IP address"
+        return result
+
+    def reverse_job():
+        try:
+            host, aliases, addresses = socket.gethostbyaddr(ip)
+            result["reverse_dns"] = host
+            return result
+        except Exception as e:
+            result["error"] = str(e)
+            return result
+
+    return await asyncio.to_thread(reverse_job)
 
 
 async def resolve_subdomain(subdomain):
@@ -2097,6 +2175,7 @@ async def analyze(target, profile="full"):
 
     url = normalize_target(target)
     host = get_hostname(target)
+    target_type = get_target_type(host) if host else "unknown"
 
     score = 0
     alerts = []
@@ -2111,6 +2190,7 @@ async def analyze(target, profile="full"):
             "target": target,
             "host": None,
             "ip": None,
+            "target_type": "unknown",
             "profile": profile,
             "risk": "HIGH",
             "score": 100,
@@ -2135,13 +2215,17 @@ async def analyze(target, profile="full"):
         }
 
     try:
-        ip = socket.gethostbyname(host)
+        if target_type == "ip":
+            ip = host
+        else:
+            ip = socket.gethostbyname(host)
 
     except Exception:
         return {
             "target": target,
             "host": host,
             "ip": None,
+            "target_type": target_type,
             "profile": profile,
             "risk": "HIGH",
             "score": 90,
@@ -2198,17 +2282,34 @@ async def analyze(target, profile="full"):
         headers={"User-Agent": "ThreatScanner-Profile/3.0"}
     ) as client:
 
-        response_task = safe_get(client, url)
+        response_task = get_best_response(client, url)
         options_task = safe_options(client, url)
         ssl_task = check_ssl(host)
-        dns_task = check_dns_security(host)
+        dns_task = (
+            check_dns_security(host)
+            if target_type == "domain"
+            else asyncio.sleep(0, result={
+                "a_records": [ip],
+                "mx_records": [],
+                "ns_records": [],
+                "txt_records": [],
+                "spf": False,
+                "dmarc": False,
+                "issues": ["DNS email checks skipped for IP target"]
+            })
+        )
         robots_task = check_robots_txt(client, url)
         security_txt_task = check_security_txt(client, url)
         whois_asn_task = check_whois_asn(client, ip)
+        reverse_dns_task = (
+            check_reverse_dns(ip)
+            if target_type == "ip"
+            else asyncio.sleep(0, result={"ip": ip, "reverse_dns": None, "error": None})
+        )
 
         subdomains_task = (
             check_subdomains(client, host)
-            if enable_subdomains
+            if enable_subdomains and target_type == "domain"
             else asyncio.sleep(0, result=[])
         )
 
@@ -2248,6 +2349,7 @@ async def analyze(target, profile="full"):
             robots_txt,
             security_txt,
             whois_asn,
+            reverse_dns,
             subdomains,
             nikto_checks,
             advanced_exposures,
@@ -2262,6 +2364,7 @@ async def analyze(target, profile="full"):
             robots_task,
             security_txt_task,
             whois_asn_task,
+            reverse_dns_task,
             subdomains_task,
             nikto_task,
             advanced_exposure_task,
@@ -2975,6 +3078,21 @@ async def analyze(target, profile="full"):
             whois_evidence or whois_asn.get("ip")
         )
 
+    if target_type == "ip":
+        reverse_evidence = reverse_dns.get("reverse_dns") if reverse_dns else None
+
+        add_finding(
+            findings,
+            "IP Target Scan",
+            "INFO",
+            "The scanner analyzed a raw IP address instead of a domain name.",
+            "Review exposed services, ports, reverse DNS, and ensure admin/login panels are not publicly reachable.",
+            "IP Intelligence",
+            reverse_evidence or ip,
+            "HIGH",
+            "target_type"
+        )
+
     tech_text = " ".join(technologies + vulnerabilities)
 
     for item in cve_results:
@@ -3071,6 +3189,7 @@ async def analyze(target, profile="full"):
         "target": target,
         "host": host,
         "ip": ip,
+        "target_type": target_type,
         "profile": profile,
         "risk": risk,
         "score": score,
@@ -3090,6 +3209,7 @@ async def analyze(target, profile="full"):
         "robots_txt": robots_txt,
         "security_txt": security_txt,
         "whois_asn": whois_asn,
+        "reverse_dns": reverse_dns,
         "subdomains": subdomains,
         "nikto_checks": nikto_checks,
         "security_headers": {
