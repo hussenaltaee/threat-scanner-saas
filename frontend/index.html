@@ -269,6 +269,213 @@ input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 4px #38bdf83
   font-weight:900;
 }
 
+
+/* ===== Premium Animated UI Upgrade ===== */
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:-2;
+  background:
+    radial-gradient(circle at 20% 20%,rgba(56,189,248,.16),transparent 28%),
+    radial-gradient(circle at 80% 10%,rgba(168,85,247,.14),transparent 26%),
+    radial-gradient(circle at 50% 90%,rgba(34,197,94,.10),transparent 30%);
+  animation:bgFloat 12s ease-in-out infinite alternate;
+}
+body::after{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  z-index:-1;
+  opacity:.18;
+  background-image:
+    linear-gradient(rgba(148,163,184,.16) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(148,163,184,.16) 1px,transparent 1px);
+  background-size:42px 42px;
+  mask-image:linear-gradient(to bottom,transparent,#000 16%,#000 80%,transparent);
+}
+@keyframes bgFloat{
+  0%{filter:hue-rotate(0deg);transform:scale(1)}
+  100%{filter:hue-rotate(18deg);transform:scale(1.03)}
+}
+@keyframes floatUp{
+  from{opacity:0;transform:translateY(18px) scale(.98)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+@keyframes pulseGlow{
+  0%,100%{box-shadow:0 0 22px rgba(56,189,248,.20)}
+  50%{box-shadow:0 0 38px rgba(56,189,248,.38)}
+}
+@keyframes shine{
+  0%{left:-80%}
+  100%{left:120%}
+}
+@keyframes scanMove{
+  0%{transform:translateX(-120%)}
+  100%{transform:translateX(120%)}
+}
+.topbar{
+  animation:floatUp .55s ease both;
+}
+.logo-icon{
+  animation:pulseGlow 2.4s ease-in-out infinite;
+}
+.brand h1{
+  background:linear-gradient(135deg,#f8fafc,#38bdf8,#a855f7);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+}
+.creator-banner,.hero-card,.auth-card,.panel,.card{
+  animation:floatUp .7s ease both;
+}
+.hero-card,.auth-card,.panel,.card,.finding,.summary-box,.engine-card{
+  position:relative;
+  overflow:hidden;
+}
+.hero-card::before,.auth-card::before,.panel::before,.card::before{
+  content:"";
+  position:absolute;
+  top:0;
+  left:-80%;
+  width:45%;
+  height:100%;
+  transform:skewX(-18deg);
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.08),transparent);
+  animation:shine 7s ease-in-out infinite;
+}
+.btn{
+  position:relative;
+  overflow:hidden;
+}
+.btn::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  opacity:0;
+  background:linear-gradient(135deg,rgba(255,255,255,.35),transparent);
+  transition:.25s;
+}
+.btn:hover::after{opacity:1}
+.btn:hover{
+  transform:translateY(-2px) scale(1.015);
+}
+.summary-box,.finding,.engine-card,.history-row,.stat,.feature{
+  transition:transform .22s ease,border-color .22s ease,box-shadow .22s ease;
+}
+.summary-box:hover,.finding:hover,.engine-card:hover,.history-row:hover,.stat:hover,.feature:hover{
+  transform:translateY(-3px);
+  border-color:rgba(56,189,248,.75);
+  box-shadow:0 16px 35px rgba(0,0,0,.28);
+}
+.progress-wrap{
+  height:30px;
+  position:relative;
+}
+.progress-bar{
+  position:relative;
+  overflow:hidden;
+}
+.progress-bar::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  width:55%;
+  background:linear-gradient(90deg,transparent,rgba(255,255,255,.35),transparent);
+  animation:scanMove 1.2s linear infinite;
+}
+.premium-loader{
+  display:grid;
+  gap:14px;
+  place-items:center;
+  padding:18px 0 6px;
+}
+.radar{
+  width:116px;
+  height:116px;
+  border-radius:50%;
+  position:relative;
+  background:
+    radial-gradient(circle,rgba(56,189,248,.25) 0 3px,transparent 4px),
+    radial-gradient(circle,transparent 0 34%,rgba(56,189,248,.18) 35% 36%,transparent 37%),
+    radial-gradient(circle,transparent 0 62%,rgba(56,189,248,.15) 63% 64%,transparent 65%);
+  border:1px solid rgba(56,189,248,.45);
+  box-shadow:0 0 28px rgba(56,189,248,.20),inset 0 0 30px rgba(56,189,248,.08);
+}
+.radar::before{
+  content:"";
+  position:absolute;
+  top:50%;
+  left:50%;
+  width:50%;
+  height:2px;
+  transform-origin:left center;
+  background:linear-gradient(90deg,#38bdf8,transparent);
+  animation:radarSpin 1.4s linear infinite;
+}
+.radar::after{
+  content:"";
+  position:absolute;
+  inset:10px;
+  border-radius:50%;
+  border:1px dashed rgba(186,230,253,.22);
+}
+@keyframes radarSpin{
+  from{transform:rotate(0deg)}
+  to{transform:rotate(360deg)}
+}
+.scan-steps{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(135px,1fr));
+  gap:10px;
+  margin-top:14px;
+}
+.scan-step{
+  background:#020617;
+  border:1px solid var(--border);
+  border-radius:13px;
+  padding:10px;
+  color:#cbd5e1;
+  font-size:13px;
+  font-weight:800;
+}
+.scan-step.active{
+  border-color:#38bdf8;
+  color:#bae6fd;
+  box-shadow:0 0 20px rgba(56,189,248,.14);
+}
+.result-tabs{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  margin:12px 0 18px;
+}
+.result-tab{
+  padding:8px 11px;
+  border-radius:999px;
+  background:#020617;
+  border:1px solid var(--border);
+  color:#cbd5e1;
+  font-size:12px;
+  font-weight:900;
+}
+.result-tab.real{border-color:#22c55e;color:#bbf7d0}
+.result-tab.review{border-color:#f59e0b;color:#fde68a}
+.result-tab.info{border-color:#38bdf8;color:#bae6fd}
+input#t{
+  font-weight:800;
+  letter-spacing:.2px;
+}
+.kicker,.badge,.target-type,.pill{
+  box-shadow:0 0 22px rgba(56,189,248,.12);
+}
+@media(max-width:520px){
+  .creator-banner{border-radius:18px;text-align:center;line-height:1.5}
+  .radar{width:92px;height:92px}
+}
+
 @media(max-width:980px){
   
 .creator-banner{
@@ -343,10 +550,10 @@ input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 4px #38bdf83
   <section class="hero" id="authArea">
     <div class="hero-card">
       <div class="kicker">⚡ Defensive Security Scanner</div>
-      <h2>Scan websites with clearer evidence, confidence, and fix plans.</h2>
+      <h2>Professional security scanning with evidence, confidence, and real risk separation.</h2>
       <p>
-        Analyze SSL/TLS, DNS, WAF, security headers, ports, CVEs, exposed paths,
-        JavaScript secrets, API endpoints, and prioritized remediation actions.
+        Analyze domains and IPs with confirmed vulnerabilities separated from hardening,
+        attack surface, ports, SSL/TLS, DNS, APIs, GraphQL, and remediation actions.
       </p>
       <div class="hero-stats">
         <div class="stat"><b>SSL</b><span>TLS & certificates</span></div>
@@ -391,7 +598,7 @@ input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 4px #38bdf83
       <aside class="panel">
         <h2>🚀 New Scan</h2>
         <p class="mini">Only scan websites you own or have permission to test.</p>
-        <div class="field"><label>Target domain or URL</label><input id="t" placeholder="example.com, https://example.com, or 1.1.1.1"></div>
+        <div class="field"><label>Target domain, URL, or IP address</label><input id="t" placeholder="example.com, https://example.com, or 1.1.1.1"></div>
         <div class="field">
           <label>Scan profile</label>
           <select id="scan_profile">
@@ -508,7 +715,16 @@ async function scan(){
 
   $("out").innerHTML = `
     <div class="card INFO">
-      <h2>⏳ Scanning...</h2>
+      <div class="section-title">
+        <h2>🛰️ Security Scan Running</h2>
+        <span class="pill">${esc(profile)}</span>
+      </div>
+
+      <div class="premium-loader">
+        <div class="radar"></div>
+        <p class="mini">Analyzing target, validating evidence, and separating real vulnerabilities from hardening issues.</p>
+      </div>
+
       <p><b>Target:</b> ${esc(target)}</p>
       <p><b>Profile:</b> ${esc(profile)}</p>
 
@@ -516,6 +732,14 @@ async function scan(){
         <div class="progress-bar" style="width:100%">
           Scanning...
         </div>
+      </div>
+
+      <div class="scan-steps">
+        <div class="scan-step active">🌐 Target</div>
+        <div class="scan-step active">🔒 SSL/TLS</div>
+        <div class="scan-step active">🚪 Ports</div>
+        <div class="scan-step active">🧪 Validation</div>
+        <div class="scan-step active">📋 Report</div>
       </div>
     </div>
   `;
@@ -732,7 +956,7 @@ function showResult(data){
   const graphQLResult = renderGraphQL(data.graphql_introspection);
   const realValidation = renderRealValidation(data.real_validation);
 
-  $("out").innerHTML = `<div class="card ${esc(data.risk || 'UNKNOWN')}"><div class="section-title"><h2>🛡️ Scan Result</h2><span class="pill">${esc(data.profile || "full")}</span></div><div class="summary-grid"><div class="summary-box"><h3>Risk</h3><p>${esc(data.risk || 'UNKNOWN')}</p></div><div class="summary-box"><h3>Score</h3><p>${esc(data.score ?? 'N/A')}/100</p></div><div class="summary-box"><h3>Total Checks</h3><p>${vulns.length}</p></div><div class="summary-box"><h3>Real Vulns</h3><p>${confirmedVulns.length}</p></div><div class="summary-box"><h3>Needs Review</h3><p>${possibleIssues.length}</p></div><div class="summary-box"><h3>Nikto</h3><p>${niktoChecks.length}</p></div><div class="summary-box"><h3>Critical</h3><p>${count('CRITICAL')}</p></div><div class="summary-box"><h3>High</h3><p>${count('HIGH')}</p></div><div class="summary-box"><h3>Medium</h3><p>${count('MEDIUM')}</p></div><div class="summary-box"><h3>Low</h3><p>${count('LOW')}</p></div><div class="summary-box"><h3>CVEs</h3><p>${cveCount}</p></div><div class="summary-box"><h3>Subdomains</h3><p>${data.subdomains?.length || 0}</p></div><div class="summary-box"><h3>Target Type</h3><p>${esc((data.target_type || "domain").toUpperCase())}</p></div></div><h3>🌐 Target Information</h3><p>${formatTargetType(data.target_type)}</p><p><b>Target:</b> ${esc(data.target)}</p><p><b>Host:</b> ${esc(data.host)}</p><p><b>IP:</b> ${esc(data.ip)}</p><p><b>Reverse DNS:</b> ${esc(data.reverse_dns?.reverse_dns || "Not found")}</p><p><b>Final URL:</b> ${esc(data.final_url || "N/A")}</p><p><b>HTTP Status:</b> ${esc(data.status_code)}</p><hr><h3>✅ Detection Confidence</h3><div class="finding INFO"><p><b>Confirmed:</b> ${confirmedCount}</p><p><b>Possible:</b> ${possibleCount}</p><p><b>Informational:</b> ${infoCount}</p><p class="mini">Real Vulns = strong evidence only. Needs Review = suspicious but not confirmed. Info = attack surface or best-practice finding.</p></div><hr><h3>📋 Priority Fix Plan</h3>${fixPlan}${separatedSections}<hr><h3>🔐 JavaScript Secrets</h3>${jsSecrets}<hr><h3>🔎 API Endpoints / Attack Surface</h3>${apiEndpoints}<hr><h3>🧭 Advanced Exposure Engine</h3>${advancedExposures}<hr><h3>🔺 GraphQL Security</h3>${graphQLResult}<hr><h3>🧪 Real Validation Engine</h3>${realValidation}<hr><h3>🧪 Nikto-like Checks</h3>${niktoResults}<hr><h3>🔒 SSL / TLS</h3><p><b>SSL Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p><p><b>SSL Expiration:</b> ${esc(data.ssl?.info || "Unknown")}</p><p><b>TLS Version:</b> ${esc(data.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(data.ssl?.cipher_name || "Unknown")} / ${esc(data.ssl?.cipher_bits || "Unknown")} bits</p><p><b>Certificate Subject:</b> ${formatObject(data.ssl?.subject)}</p><p><b>Certificate Issuer:</b> ${formatObject(data.ssl?.issuer)}</p><hr><h3>🌐 DNS Security</h3><p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p><p><b>MX Records:</b> ${safeList(data.dns_security?.mx_records)}</p><p><b>NS Records:</b> ${safeList(data.dns_security?.ns_records)}</p><p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p><p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p><p><b>DNS Issues:</b> ${safeList(data.dns_security?.issues,"No DNS issues")}</p><hr><h3>🏢 Whois / ASN</h3>${whoisAsn}<hr><h3>🔁 Reverse DNS</h3>${reverseDns}<hr><h3>🤖 Robots.txt</h3><p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>Summary:</b> ${esc(data.robots_txt?.summary || "Unknown")}</p><p><b>Suspicious Entries:</b> ${safeList(data.robots_txt?.suspicious_entries)}</p><hr><h3>🛡️ Security.txt</h3><p><b>Exists:</b> ${data.security_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>URL:</b> ${esc(data.security_txt?.url || "N/A")}</p><p><b>Contacts:</b> ${safeList(data.security_txt?.contacts)}</p><p><b>Policy:</b> ${esc(data.security_txt?.policy || "None")}</p><hr><h3>🌍 Subdomains Discovered</h3>${subdomains}<hr><h3>🧠 Detected Technologies</h3><p>${safeList(data.technologies,"Unknown")}</p><hr><h3>🧬 CVE Results</h3>${cveResults}<hr><h3>🛡️ WAF Detection</h3><div class="finding INFO"><p><b>Name:</b> ${esc(data.waf?.name || data.waf || "Unknown")}</p><p><b>Confidence:</b> ${esc(data.waf?.confidence || "0%")}</p><p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p></div><hr><h3>🔁 HTTP Methods</h3><p>${safeList(data.http_methods,"Unknown")}</p><hr><h3>🚪 Open Ports</h3>${openPorts}<hr><h3>🧱 Security Headers</h3><p>✅ <b>Found:</b> ${safeList(data.security_headers?.found)}</p><p>❌ <b>Missing:</b> ${safeList(data.security_headers?.missing)}</p><hr><h3>📋 Findings & Fixes</h3>${findings}</div>`;
+  $("out").innerHTML = `<div class="card ${esc(data.risk || 'UNKNOWN')}"><div class="section-title"><h2>🛡️ Scan Result</h2><span class="pill">${esc(data.profile || "full")}</span></div><div class="result-tabs"><span class="result-tab real">🚨 Real Vulns: ${confirmedVulns.length}</span><span class="result-tab review">⚠️ Needs Review: ${possibleIssues.length}</span><span class="result-tab info">🛡️ Hardening: ${data.hardening_issues?.length || 0}</span><span class="result-tab info">🧭 Attack Surface: ${data.attack_surface?.length || 0}</span></div><div class="summary-grid"><div class="summary-box"><h3>Risk</h3><p>${esc(data.risk || 'UNKNOWN')}</p></div><div class="summary-box"><h3>Score</h3><p>${esc(data.score ?? 'N/A')}/100</p></div><div class="summary-box"><h3>Total Checks</h3><p>${vulns.length}</p></div><div class="summary-box"><h3>Real Vulns</h3><p>${confirmedVulns.length}</p></div><div class="summary-box"><h3>Needs Review</h3><p>${possibleIssues.length}</p></div><div class="summary-box"><h3>Nikto</h3><p>${niktoChecks.length}</p></div><div class="summary-box"><h3>Critical</h3><p>${count('CRITICAL')}</p></div><div class="summary-box"><h3>High</h3><p>${count('HIGH')}</p></div><div class="summary-box"><h3>Medium</h3><p>${count('MEDIUM')}</p></div><div class="summary-box"><h3>Low</h3><p>${count('LOW')}</p></div><div class="summary-box"><h3>CVEs</h3><p>${cveCount}</p></div><div class="summary-box"><h3>Subdomains</h3><p>${data.subdomains?.length || 0}</p></div><div class="summary-box"><h3>Target Type</h3><p>${esc((data.target_type || "domain").toUpperCase())}</p></div></div><h3>🌐 Target Information</h3><p>${formatTargetType(data.target_type)}</p><p><b>Target:</b> ${esc(data.target)}</p><p><b>Host:</b> ${esc(data.host)}</p><p><b>IP:</b> ${esc(data.ip)}</p><p><b>Reverse DNS:</b> ${esc(data.reverse_dns?.reverse_dns || "Not found")}</p><p><b>Final URL:</b> ${esc(data.final_url || "N/A")}</p><p><b>HTTP Status:</b> ${esc(data.status_code)}</p><hr><h3>✅ Detection Confidence</h3><div class="finding INFO"><p><b>Confirmed:</b> ${confirmedCount}</p><p><b>Possible:</b> ${possibleCount}</p><p><b>Informational:</b> ${infoCount}</p><p class="mini">Real Vulns = strong evidence only. Needs Review = suspicious but not confirmed. Info = attack surface or best-practice finding.</p></div><hr><h3>📋 Priority Fix Plan</h3>${fixPlan}${separatedSections}<hr><h3>🔐 JavaScript Secrets</h3>${jsSecrets}<hr><h3>🔎 API Endpoints / Attack Surface</h3>${apiEndpoints}<hr><h3>🧭 Advanced Exposure Engine</h3>${advancedExposures}<hr><h3>🔺 GraphQL Security</h3>${graphQLResult}<hr><h3>🧪 Real Validation Engine</h3>${realValidation}<hr><h3>🧪 Nikto-like Checks</h3>${niktoResults}<hr><h3>🔒 SSL / TLS</h3><p><b>SSL Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p><p><b>SSL Expiration:</b> ${esc(data.ssl?.info || "Unknown")}</p><p><b>TLS Version:</b> ${esc(data.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(data.ssl?.cipher_name || "Unknown")} / ${esc(data.ssl?.cipher_bits || "Unknown")} bits</p><p><b>Certificate Subject:</b> ${formatObject(data.ssl?.subject)}</p><p><b>Certificate Issuer:</b> ${formatObject(data.ssl?.issuer)}</p><hr><h3>🌐 DNS Security</h3><p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p><p><b>MX Records:</b> ${safeList(data.dns_security?.mx_records)}</p><p><b>NS Records:</b> ${safeList(data.dns_security?.ns_records)}</p><p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p><p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p><p><b>DNS Issues:</b> ${safeList(data.dns_security?.issues,"No DNS issues")}</p><hr><h3>🏢 Whois / ASN</h3>${whoisAsn}<hr><h3>🔁 Reverse DNS</h3>${reverseDns}<hr><h3>🤖 Robots.txt</h3><p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>Summary:</b> ${esc(data.robots_txt?.summary || "Unknown")}</p><p><b>Suspicious Entries:</b> ${safeList(data.robots_txt?.suspicious_entries)}</p><hr><h3>🛡️ Security.txt</h3><p><b>Exists:</b> ${data.security_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>URL:</b> ${esc(data.security_txt?.url || "N/A")}</p><p><b>Contacts:</b> ${safeList(data.security_txt?.contacts)}</p><p><b>Policy:</b> ${esc(data.security_txt?.policy || "None")}</p><hr><h3>🌍 Subdomains Discovered</h3>${subdomains}<hr><h3>🧠 Detected Technologies</h3><p>${safeList(data.technologies,"Unknown")}</p><hr><h3>🧬 CVE Results</h3>${cveResults}<hr><h3>🛡️ WAF Detection</h3><div class="finding INFO"><p><b>Name:</b> ${esc(data.waf?.name || data.waf || "Unknown")}</p><p><b>Confidence:</b> ${esc(data.waf?.confidence || "0%")}</p><p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p></div><hr><h3>🔁 HTTP Methods</h3><p>${safeList(data.http_methods,"Unknown")}</p><hr><h3>🚪 Open Ports</h3>${openPorts}<hr><h3>🧱 Security Headers</h3><p>✅ <b>Found:</b> ${safeList(data.security_headers?.found)}</p><p>❌ <b>Missing:</b> ${safeList(data.security_headers?.missing)}</p><hr><h3>📋 Findings & Fixes</h3>${findings}</div>`;
 }
 
 async function captureScreenshot(){
