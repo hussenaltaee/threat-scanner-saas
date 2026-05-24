@@ -98,6 +98,13 @@ button,input,select{font-family:inherit}
   font-weight:900;
   text-decoration:none;
 }
+.welcome-banner{
+  margin-top:18px;
+}
+.instagram-banner{
+  margin-top:10px;
+  padding:10px 16px;
+}
 
 .hero{
   padding:44px 0 28px;
@@ -239,6 +246,13 @@ input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 4px #38bdf83
   font-weight:900;
   text-decoration:none;
 }
+.welcome-banner{
+  margin-top:18px;
+}
+.instagram-banner{
+  margin-top:10px;
+  padding:10px 16px;
+}
 
 .hero{grid-template-columns:1fr}.workspace{grid-template-columns:1fr}
   .hero h2{font-size:38px}.feature-grid{grid-template-columns:1fr}
@@ -269,9 +283,13 @@ input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 4px #38bdf83
   </div>
 </div>
 
-<div class="creator-banner">
+<div class="creator-banner welcome-banner">
   <span>✨ Welcome to Threat Scanner SaaS — Professional Web Security Analysis Platform</span>
-  <a href="https://instagram.com/n8x.j" target="_blank">@n8x.j</a>
+</div>
+
+<div class="creator-banner instagram-banner">
+  <span>👨‍💻 Developed by</span>
+  <a href="https://instagram.com/n8x.j" target="_blank" rel="noopener noreferrer">@n8x.j</a>
 </div>
 
 <div class="app">
@@ -318,7 +336,6 @@ input:focus,select:focus{border-color:var(--brand);box-shadow:0 0 0 4px #38bdf83
       </section>
 
       <div class="statusline" id="statusBox">Ready. Login first, then run a scan.</div>
-      <p class="mini">Backend API: <span id="apiText"></span></p>
     </div>
   </section>
 
@@ -366,7 +383,6 @@ let lastReport = null;
 let progressTimer = null;
 let currentJobId = null;
 
-document.getElementById("apiText").innerText = API;
 updateAuthUI();
 
 function $(id){ return document.getElementById(id); }
