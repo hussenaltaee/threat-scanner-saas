@@ -1303,7 +1303,10 @@ def build_structured_storage(findings, vulnerability_checks, subdomains, cve_res
                 "category": item.get("category", "General"),
                 "description": item.get("impact"),
                 "evidence": item.get("evidence"),
-                "fix": item.get("fix")
+                "fix": item.get("fix"),
+                "confidence": item.get("confidence", "MEDIUM"),
+                "evidence_type": item.get("evidence_type", "generic"),
+                "status": item.get("status", detection_status(item.get("severity"), item.get("confidence", "MEDIUM")))
             })
 
     for sub in subdomains:
@@ -1463,6 +1466,101 @@ def calculate_realistic_score(findings):
         score += weights.get((sev, conf), 0)
 
     return min(score, 100)
+
+
+
+
+def detection_status(severity, confidence):
+    sev = str(severity or "INFO").upper()
+    conf = str(confidence or "MEDIUM").upper()
+
+    if sev in ["CRITICAL", "HIGH"] and conf == "HIGH":
+        return "CONFIRMED"
+
+    if sev in ["HIGH", "MEDIUM"] and conf in ["MEDIUM", "LOW"]:
+        return "POSSIBLE"
+
+    if sev in ["LOW", "INFO"]:
+        return "INFO"
+
+    return "POSSIBLE"
+
+
+def enrich_detection_metadata(findings, vulnerability_checks):
+    for item in findings:
+        item["confidence"] = item.get("confidence", "MEDIUM")
+        item["evidence_type"] = item.get("evidence_type", "generic")
+        item["status"] = item.get("status") or detection_status(
+            item.get("severity"),
+            item.get("confidence")
+        )
+
+    for item in vulnerability_checks:
+        item["confidence"] = item.get("confidence", "MEDIUM")
+        item["evidence_type"] = item.get("evidence_type", "generic")
+        item["status"] = item.get("status") or detection_status(
+            item.get("severity"),
+            item.get("confidence")
+        )
+
+    return findings, vulnerability_checks
+
+
+def calculate_realistic_score_v2(findings):
+    score = 0
+
+    weights = {
+        ("CONFIRMED", "CRITICAL"): 28,
+        ("CONFIRMED", "HIGH"): 22,
+        ("CONFIRMED", "MEDIUM"): 10,
+        ("CONFIRMED", "LOW"): 3,
+
+        ("POSSIBLE", "CRITICAL"): 14,
+        ("POSSIBLE", "HIGH"): 10,
+        ("POSSIBLE", "MEDIUM"): 5,
+        ("POSSIBLE", "LOW"): 1,
+
+        ("INFO", "INFO"): 0,
+        ("INFO", "LOW"): 0
+    }
+
+    for item in findings:
+        status = str(item.get("status", "POSSIBLE")).upper()
+        severity = str(item.get("severity", "INFO")).upper()
+        score += weights.get((status, severity), 0)
+
+    return min(score, 100)
+
+
+def build_detection_summary(findings):
+    summary = {
+        "confirmed": 0,
+        "possible": 0,
+        "informational": 0,
+        "high_confidence": 0,
+        "medium_confidence": 0,
+        "low_confidence": 0
+    }
+
+    for item in findings:
+        status = str(item.get("status", "INFO")).upper()
+        confidence = str(item.get("confidence", "MEDIUM")).upper()
+
+        if status == "CONFIRMED":
+            summary["confirmed"] += 1
+        elif status == "POSSIBLE":
+            summary["possible"] += 1
+        else:
+            summary["informational"] += 1
+
+        if confidence == "HIGH":
+            summary["high_confidence"] += 1
+        elif confidence == "LOW":
+            summary["low_confidence"] += 1
+        else:
+            summary["medium_confidence"] += 1
+
+    return summary
 
 
 
@@ -1993,7 +2091,9 @@ async def analyze(target, profile="full"):
                             endpoint.get("endpoint"),
                             "Potentially sensitive API or admin endpoint discovered in frontend content.",
                             "Protect internal/admin/debug endpoints and disable unused public APIs.",
-                            "Attack Surface"
+                            "Attack Surface",
+                            "LOW",
+                            "frontend_reference"
                         )
 
             test_payloads = [
@@ -2336,7 +2436,20 @@ async def analyze(target, profile="full"):
                 cve.get("url")
             )
 
-    score = calculate_realistic_score(findings)
+    vulnerabilities = dedupe_list(vulnerabilities)
+    alerts = dedupe_list(alerts + vulnerabilities)
+    findings = dedupe_dicts(findings, ["title", "severity", "evidence"])
+    vulnerability_checks = dedupe_dicts(
+        vulnerability_checks,
+        ["name", "severity", "evidence"]
+    )
+
+    findings, vulnerability_checks = enrich_detection_metadata(
+        findings,
+        vulnerability_checks
+    )
+
+    score = calculate_realistic_score_v2(findings)
 
     if score >= 70:
         risk = "HIGH"
@@ -2345,13 +2458,7 @@ async def analyze(target, profile="full"):
     else:
         risk = "LOW"
 
-    vulnerabilities = dedupe_list(vulnerabilities)
-    alerts = dedupe_list(alerts + vulnerabilities)
-    findings = dedupe_dicts(findings, ["title", "severity", "evidence"])
-    vulnerability_checks = dedupe_dicts(
-        vulnerability_checks,
-        ["name", "severity", "evidence"]
-    )
+    detection_summary = build_detection_summary(findings)
 
     structured = build_structured_storage(
         findings=findings,
@@ -2430,6 +2537,7 @@ async def analyze(target, profile="full"):
         "alerts": alerts,
         "structured": structured,
         "scan_summary": scan_summary,
+        "detection_summary": detection_summary,
         "remediation_plan": remediation_plan,
         "score_explanation": score_explanation
     }
