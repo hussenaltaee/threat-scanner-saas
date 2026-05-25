@@ -2606,7 +2606,6 @@ async def analyze(target, profile="full"):
             advanced_exposure_task,
             graphql_introspection_task,
             ports_task,
-            nmap_task,
             sensitive_task
         )
 
