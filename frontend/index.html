@@ -761,11 +761,11 @@ async function scan(){
     }
 
     setStatus("✅ Scan completed");
-    showResult(data);
+    console.log("SCAN RESULT:", data); showResult(data);
 
   }catch(err){
 
-    console.error(err);
+    console.error("Scan Error:", err);
 
     showError("Cannot connect to backend");
 
