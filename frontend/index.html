@@ -700,12 +700,14 @@ function requireToken(){
 }
 
 async function scan(){
+
   const target = val("t");
   const profile = val("scan_profile");
   const token = localStorage.getItem("token") || "";
 
   if(!token){
     setStatus("❌ Please login first");
+    updateAuthUI();
     return;
   }
 
@@ -728,6 +730,9 @@ async function scan(){
         <p class="mini">Analyzing target and validating evidence...</p>
       </div>
 
+      <p><b>Target:</b> ${esc(target)}</p>
+      <p><b>Profile:</b> ${esc(profile)}</p>
+
       <div class="progress-wrap">
         <div class="progress-bar" style="width:100%">
           Scanning...
@@ -738,20 +743,17 @@ async function scan(){
 
   try{
 
-    const response = await fetch(
-      API + "/scan",
-      {
-        method:"POST",
-        headers:{
-          "Content-Type":"application/json",
-          "Authorization":"Bearer " + token
-        },
-        body:JSON.stringify({
-          target:target,
-          profile:profile
-        })
-      }
-    );
+    const response = await fetch(API + "/scan", {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "Authorization":"Bearer " + token
+      },
+      body:JSON.stringify({
+        target:target,
+        profile:profile
+      })
+    });
 
     const data = await response.json().catch(()=>({}));
 
@@ -761,12 +763,22 @@ async function scan(){
     }
 
     setStatus("✅ Scan completed");
-    console.log("SCAN RESULT:", data); showResult(data);
+    console.log("SCAN RESULT:", data);
+
+    if(typeof showResult === "function"){
+      showResult(data);
+    }else{
+      $("out").innerHTML = `
+        <div class="card INFO">
+          <h2>🛡️ Scan Result</h2>
+          <pre>${esc(JSON.stringify(data, null, 2))}</pre>
+        </div>
+      `;
+    }
 
   }catch(err){
 
     console.error("Scan Error:", err);
-
     showError("Cannot connect to backend");
 
   }
@@ -809,13 +821,14 @@ function pollScanStatus(jobId){
   }, 900);
 }
 
-function showError(msg){ $("out").innerHTML = `<div class="card HIGH"><h2>❌ Error</h2><p>${esc(msg)}</p></div>`; setStatus("❌ " + esc(msg)); }
-function formatObject(obj){ if(!obj || typeof obj !== "object") return "Unknown"; const parts=[]; for(const key in obj){ if(obj[key]) parts.push(`${esc(key)}: ${esc(obj[key])}`); } return parts.length ? parts.join(", ") : "Unknown"; }
-function safeList(arr, empty="None"){ return Array.isArray(arr) && arr.length ? arr.map(esc).join(", ") : empty; }
-function statusChip(status){
-  const s = String(status || "INFO").toUpperCase();
-  const label = s === "CONFIRMED" ? "✅ Confirmed" : s === "POSSIBLE" ? "⚠️ Possible" : "ℹ️ Info";
-  return `<span class="status-chip status-${esc(s)}">${label}</span>`;
+function showError(msg){
+  $("out").innerHTML = `
+    <div class="card HIGH">
+      <h2>❌ Error</h2>
+      <p>${esc(msg)}</p>
+    </div>
+  `;
+  setStatus("❌ " + esc(msg));
 }
 function confidenceText(conf){
   const c = String(conf || "MEDIUM").toUpperCase();
@@ -927,7 +940,7 @@ function renderSeparatedResults(data){
   `;
 }
 
-function showResult(data){
+function showResultFull(data){
   if(!data){ showError("Empty scan result"); return; }
   lastReport = data;
   const vulns = data.vulnerability_checks || [], cveGroups = data.cve_results || [], niktoChecks = data.nikto_checks || [];
@@ -958,6 +971,83 @@ function showResult(data){
 
   $("out").innerHTML = `<div class="card ${esc(data.risk || 'UNKNOWN')}"><div class="section-title"><h2>🛡️ Scan Result</h2><span class="pill">${esc(data.profile || "full")}</span></div><div class="result-tabs"><span class="result-tab real">🚨 Real Vulns: ${confirmedVulns.length}</span><span class="result-tab review">⚠️ Needs Review: ${possibleIssues.length}</span><span class="result-tab info">🛡️ Hardening: ${data.hardening_issues?.length || 0}</span><span class="result-tab info">🧭 Attack Surface: ${data.attack_surface?.length || 0}</span></div><div class="summary-grid"><div class="summary-box"><h3>Risk</h3><p>${esc(data.risk || 'UNKNOWN')}</p></div><div class="summary-box"><h3>Score</h3><p>${esc(data.score ?? 'N/A')}/100</p></div><div class="summary-box"><h3>Total Checks</h3><p>${vulns.length}</p></div><div class="summary-box"><h3>Real Vulns</h3><p>${confirmedVulns.length}</p></div><div class="summary-box"><h3>Needs Review</h3><p>${possibleIssues.length}</p></div><div class="summary-box"><h3>Nikto</h3><p>${niktoChecks.length}</p></div><div class="summary-box"><h3>Critical</h3><p>${count('CRITICAL')}</p></div><div class="summary-box"><h3>High</h3><p>${count('HIGH')}</p></div><div class="summary-box"><h3>Medium</h3><p>${count('MEDIUM')}</p></div><div class="summary-box"><h3>Low</h3><p>${count('LOW')}</p></div><div class="summary-box"><h3>CVEs</h3><p>${cveCount}</p></div><div class="summary-box"><h3>Subdomains</h3><p>${data.subdomains?.length || 0}</p></div><div class="summary-box"><h3>Target Type</h3><p>${esc((data.target_type || "domain").toUpperCase())}</p></div></div><h3>🌐 Target Information</h3><p>${formatTargetType(data.target_type)}</p><p><b>Target:</b> ${esc(data.target)}</p><p><b>Host:</b> ${esc(data.host)}</p><p><b>IP:</b> ${esc(data.ip)}</p><p><b>Reverse DNS:</b> ${esc(data.reverse_dns?.reverse_dns || "Not found")}</p><p><b>Final URL:</b> ${esc(data.final_url || "N/A")}</p><p><b>HTTP Status:</b> ${esc(data.status_code)}</p><hr><h3>✅ Detection Confidence</h3><div class="finding INFO"><p><b>Confirmed:</b> ${confirmedCount}</p><p><b>Possible:</b> ${possibleCount}</p><p><b>Informational:</b> ${infoCount}</p><p class="mini">Real Vulns = strong evidence only. Needs Review = suspicious but not confirmed. Info = attack surface or best-practice finding.</p></div><hr><h3>📋 Priority Fix Plan</h3>${fixPlan}${separatedSections}<hr><h3>🔐 JavaScript Secrets</h3>${jsSecrets}<hr><h3>🔎 API Endpoints / Attack Surface</h3>${apiEndpoints}<hr><h3>🧭 Advanced Exposure Engine</h3>${advancedExposures}<hr><h3>🔺 GraphQL Security</h3>${graphQLResult}<hr><h3>🧪 Real Validation Engine</h3>${realValidation}<hr><h3>🧪 Nikto-like Checks</h3>${niktoResults}<hr><h3>🔒 SSL / TLS</h3><p><b>SSL Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p><p><b>SSL Expiration:</b> ${esc(data.ssl?.info || "Unknown")}</p><p><b>TLS Version:</b> ${esc(data.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(data.ssl?.cipher_name || "Unknown")} / ${esc(data.ssl?.cipher_bits || "Unknown")} bits</p><p><b>Certificate Subject:</b> ${formatObject(data.ssl?.subject)}</p><p><b>Certificate Issuer:</b> ${formatObject(data.ssl?.issuer)}</p><hr><h3>🌐 DNS Security</h3><p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p><p><b>MX Records:</b> ${safeList(data.dns_security?.mx_records)}</p><p><b>NS Records:</b> ${safeList(data.dns_security?.ns_records)}</p><p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p><p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p><p><b>DNS Issues:</b> ${safeList(data.dns_security?.issues,"No DNS issues")}</p><hr><h3>🏢 Whois / ASN</h3>${whoisAsn}<hr><h3>🔁 Reverse DNS</h3>${reverseDns}<hr><h3>🤖 Robots.txt</h3><p><b>Exists:</b> ${data.robots_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>Summary:</b> ${esc(data.robots_txt?.summary || "Unknown")}</p><p><b>Suspicious Entries:</b> ${safeList(data.robots_txt?.suspicious_entries)}</p><hr><h3>🛡️ Security.txt</h3><p><b>Exists:</b> ${data.security_txt?.exists ? "✅ Yes" : "❌ No"}</p><p><b>URL:</b> ${esc(data.security_txt?.url || "N/A")}</p><p><b>Contacts:</b> ${safeList(data.security_txt?.contacts)}</p><p><b>Policy:</b> ${esc(data.security_txt?.policy || "None")}</p><hr><h3>🌍 Subdomains Discovered</h3>${subdomains}<hr><h3>🧠 Detected Technologies</h3><p>${safeList(data.technologies,"Unknown")}</p><hr><h3>🧬 CVE Results</h3>${cveResults}<hr><h3>🛡️ WAF Detection</h3><div class="finding INFO"><p><b>Name:</b> ${esc(data.waf?.name || data.waf || "Unknown")}</p><p><b>Confidence:</b> ${esc(data.waf?.confidence || "0%")}</p><p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p></div><hr><h3>🔁 HTTP Methods</h3><p>${safeList(data.http_methods,"Unknown")}</p><hr><h3>🚪 Open Ports</h3>${openPorts}<hr><h3>🧱 Security Headers</h3><p>✅ <b>Found:</b> ${safeList(data.security_headers?.found)}</p><p>❌ <b>Missing:</b> ${safeList(data.security_headers?.missing)}</p><hr><h3>📋 Findings & Fixes</h3>${findings}</div>`;
 }
+
+
+function showResult(data){
+  try{
+    showResultFull(data);
+    const out = $("out");
+    if(!out || !out.innerHTML.trim()){
+      throw new Error("Empty rendered output");
+    }
+  }catch(err){
+    console.error("showResult rendering error:", err);
+    lastReport = data;
+
+    const ports = Array.isArray(data.open_ports) && data.open_ports.length
+      ? data.open_ports.map(p => `<div class="finding INFO"><b>Port:</b> ${esc(p.port || p)} | <b>Service:</b> ${esc(p.service || "Unknown")} | <b>State:</b> ${esc(p.state || p.risk || "open")}</div>`).join("")
+      : "<p>No open ports returned</p>";
+
+    const nmapPorts = Array.isArray(data.nmap_scan?.ports) && data.nmap_scan.ports.length
+      ? data.nmap_scan.ports.map(p => `<div class="finding INFO"><b>Port:</b> ${esc(p.port)} | <b>Protocol:</b> ${esc(p.protocol || "-")} | <b>State:</b> ${esc(p.state || "-")} | <b>Service:</b> ${esc(p.service || "-")} | <b>Product:</b> ${esc(p.product || "-")} ${esc(p.version || "")}</div>`).join("")
+      : `<p>${esc(data.nmap_scan?.error || "No Nmap results returned")}</p>`;
+
+    const findings = Array.isArray(data.findings) && data.findings.length
+      ? data.findings.map(f => `<div class="finding ${esc(f.severity || "INFO")}"><h4>${esc(f.title || f.name || "Finding")}</h4><p><b>Severity:</b> ${esc(f.severity || "INFO")}</p><p><b>Evidence:</b> ${esc(f.evidence || "N/A")}</p><p><b>Fix:</b> ${esc(f.fix || "Review manually")}</p></div>`).join("")
+      : "<p>No findings returned</p>";
+
+    $("out").innerHTML = `
+      <div class="card ${esc(data.risk || "INFO")}">
+        <div class="section-title">
+          <h2>🛡️ Scan Result</h2>
+          <span class="pill">${esc(data.profile || "full")}</span>
+        </div>
+
+        <div class="summary-grid">
+          <div class="summary-box"><h3>Risk</h3><p>${esc(data.risk || "UNKNOWN")}</p></div>
+          <div class="summary-box"><h3>Score</h3><p>${esc(data.score ?? "N/A")}/100</p></div>
+          <div class="summary-box"><h3>Target</h3><p>${esc(data.target_type || "domain")}</p></div>
+          <div class="summary-box"><h3>HTTP</h3><p>${esc(data.status_code || "N/A")}</p></div>
+        </div>
+
+        <h3>🌐 Target Information</h3>
+        <p><b>Target:</b> ${esc(data.target || "N/A")}</p>
+        <p><b>Host:</b> ${esc(data.host || "N/A")}</p>
+        <p><b>IP:</b> ${esc(data.ip || "N/A")}</p>
+        <p><b>Final URL:</b> ${esc(data.final_url || "N/A")}</p>
+
+        <hr>
+        <h3>🛰️ Nmap Scan</h3>
+        <p><b>Enabled:</b> ${data.nmap_scan?.enabled ? "✅ Yes" : "❌ No"}</p>
+        ${nmapPorts}
+
+        <hr>
+        <h3>🚪 Open Ports</h3>
+        ${ports}
+
+        <hr>
+        <h3>🔒 SSL / TLS</h3>
+        <p><b>Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p>
+        <p><b>TLS:</b> ${esc(data.ssl?.tls_version || "Unknown")}</p>
+        <p><b>Expires:</b> ${esc(data.ssl?.info || data.ssl?.expires || "Unknown")}</p>
+
+        <hr>
+        <h3>🌐 DNS Security</h3>
+        <p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p>
+        <p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p>
+
+        <hr>
+        <h3>📋 Findings</h3>
+        ${findings}
+
+        <hr>
+        <h3>🧾 Raw JSON</h3>
+        <pre style="white-space:pre-wrap;background:#020617;border:1px solid var(--border);padding:12px;border-radius:12px;overflow:auto;max-height:420px">${esc(JSON.stringify(data, null, 2))}</pre>
+      </div>
+    `;
+  }
+}
+
 
 async function captureScreenshot(){
   const token = requireToken(), target = val("t"); if(!token) return; if(!target){ setStatus("❌ اكتب الموقع أولاً"); return; }
