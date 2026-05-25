@@ -757,3 +757,38 @@ def delete_scan_history(
         "message": "Scan deleted",
         "scan_id": scan_id
     }
+
+# ===== Advanced Upgrade Patch =====
+
+def calculate_realistic_risk(findings, vulns, open_ports):
+    score = 0
+
+    for item in findings + vulns:
+        sev = str(item.get("severity", "")).upper()
+
+        if sev == "CRITICAL":
+            score += 40
+        elif sev == "HIGH":
+            score += 25
+        elif sev == "MEDIUM":
+            score += 10
+        elif sev == "LOW":
+            score += 4
+
+    for port in open_ports:
+        if port.get("risk") == "RISKY":
+            score += 6
+
+    score = min(score, 100)
+
+    if score >= 80:
+        risk = "CRITICAL"
+    elif score >= 55:
+        risk = "HIGH"
+    elif score >= 25:
+        risk = "MEDIUM"
+    else:
+        risk = "LOW"
+
+    return risk, score
+

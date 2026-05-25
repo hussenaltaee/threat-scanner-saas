@@ -3591,3 +3591,10 @@ async def run_nmap_scan(host):
     except Exception as e:
         result["error"] = str(e)
         return result
+
+
+REAL_CVE_LOOKUP = {
+    "WordPress": ["CVE-2024-28000", "CVE-2023-45124"],
+    "Apache": ["CVE-2023-25690"],
+    "Nginx": ["CVE-2023-44487"]
+}
