@@ -61,7 +61,8 @@ security = HTTPBearer()
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 app.add_middleware(SlowAPIMiddleware)
-app.add_middleware(HTTPSRedirectMiddleware)
+# Disabled on Render to prevent CORS/preflight redirect problems
+# app.add_middleware(HTTPSRedirectMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
@@ -69,10 +70,8 @@ app.add_middleware(
         "https://threat-frontend.onrender.com",
         "https://threat-scanner-saas-2.onrender.com",
         "https://threat-scanner-saas-1.onrender.com",
-        "https://threat-scanner-saas.onrender.com",
         "http://localhost:3000",
-        "http://127.0.0.1:5500",
-        "*"
+        "http://127.0.0.1:5500"
     ],
     allow_credentials=True,
     allow_methods=["*"],
