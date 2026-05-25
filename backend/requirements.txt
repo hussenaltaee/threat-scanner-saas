@@ -10,3 +10,4 @@ dnspython
 python-dotenv
 slowapi
 playwright
+python-nmap

@@ -5,6 +5,7 @@ import httpx
 import dns.resolver
 import re
 import ipaddress
+import nmap
 from urllib.parse import urlparse, urljoin
 
 
@@ -2560,6 +2561,17 @@ async def analyze(target, profile="full"):
             for port in list(set(COMMON_PORTS + RISKY_PORTS))
         ])
 
+        nmap_task = (
+            run_nmap_scan(host)
+            if profile in ["full", "deep"]
+            else asyncio.sleep(0, result={
+                "enabled": False,
+                "host": host,
+                "ports": [],
+                "error": None
+            })
+        )
+
         sensitive_task = asyncio.gather(*[
             check_sensitive_path(client, url, path)
             for path in SENSITIVE_PATHS
@@ -3449,6 +3461,7 @@ async def analyze(target, profile="full"):
             "missing": missing_headers
         },
         "open_ports": open_ports,
+        "nmap_scan": nmap_result,
         "technologies": technologies,
         "cve_results": cve_results,
         "waf": waf,
@@ -3474,3 +3487,48 @@ async def analyze(target, profile="full"):
         "remediation_plan": remediation_plan,
         "score_explanation": score_explanation
     }
+
+
+async def run_nmap_scan(host):
+    """
+    Safe defensive Nmap scan
+    """
+
+    result = {
+        "enabled": False,
+        "host": host,
+        "ports": [],
+        "error": None
+    }
+
+    try:
+        scanner = nmap.PortScanner()
+
+        scanner.scan(
+            host,
+            arguments="-Pn -sV -T3 --top-ports 100"
+        )
+
+        result["enabled"] = True
+
+        for proto in scanner[host].all_protocols():
+            ports = scanner[host][proto].keys()
+
+            for port in sorted(ports):
+                data = scanner[host][proto][port]
+
+                result["ports"].append({
+                    "port": port,
+                    "protocol": proto,
+                    "state": data.get("state"),
+                    "service": data.get("name"),
+                    "product": data.get("product"),
+                    "version": data.get("version"),
+                    "extra_info": data.get("extrainfo")
+                })
+
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        return result
