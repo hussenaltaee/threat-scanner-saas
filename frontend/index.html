@@ -702,12 +702,15 @@ function requireToken(){
 async function scan(){
   const target = val("t");
   const profile = val("scan_profile");
-  const token = requireToken();
+  const token = localStorage.getItem("token") || "";
 
-  if(!token) return;
+  if(!token){
+    setStatus("❌ Please login first");
+    return;
+  }
 
   if(!target){
-    setStatus("❌ اكتب الموقع أولاً");
+    setStatus("❌ Enter target first");
     return;
   }
 
@@ -722,53 +725,50 @@ async function scan(){
 
       <div class="premium-loader">
         <div class="radar"></div>
-        <p class="mini">Analyzing target, validating evidence, and separating real vulnerabilities from hardening issues.</p>
+        <p class="mini">Analyzing target and validating evidence...</p>
       </div>
-
-      <p><b>Target:</b> ${esc(target)}</p>
-      <p><b>Profile:</b> ${esc(profile)}</p>
 
       <div class="progress-wrap">
         <div class="progress-bar" style="width:100%">
           Scanning...
         </div>
       </div>
-
-      <div class="scan-steps">
-        <div class="scan-step active">🌐 Target</div>
-        <div class="scan-step active">🔒 SSL/TLS</div>
-        <div class="scan-step active">🚪 Ports</div>
-        <div class="scan-step active">🧪 Validation</div>
-        <div class="scan-step active">📋 Report</div>
-      </div>
     </div>
   `;
 
   try{
-    const res = await fetch(API + "/scan", {
-      method:"POST",
-      headers:{
-        "Content-Type":"application/json",
-        "Authorization":"Bearer " + token
-      },
-      body:JSON.stringify({
-        target,
-        profile
-      })
-    });
 
-    const data = await res.json().catch(()=>({}));
+    const response = await fetch(
+      API + "/scan",
+      {
+        method:"POST",
+        headers:{
+          "Content-Type":"application/json",
+          "Authorization":"Bearer " + token
+        },
+        body:JSON.stringify({
+          target:target,
+          profile:profile
+        })
+      }
+    );
 
-    if(!res.ok){
-      showError(data.detail || "Scan failed");
+    const data = await response.json().catch(()=>({}));
+
+    if(!response.ok){
+      showError(data.detail || ("HTTP " + response.status));
       return;
     }
 
     setStatus("✅ Scan completed");
     showResult(data);
 
-  }catch(e){
+  }catch(err){
+
+    console.error(err);
+
     showError("Cannot connect to backend");
+
   }
 }
 
