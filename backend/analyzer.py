@@ -2643,6 +2643,7 @@ async def analyze(target, profile="full"):
             advanced_exposures,
             graphql_introspection,
             ports_result,
+            nmap_result,
             sensitive_result
         ) = await asyncio.gather(
             response_task,
