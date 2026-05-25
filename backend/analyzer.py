@@ -1921,9 +1921,12 @@ def build_structured_storage(findings, vulnerability_checks, subdomains, cve_res
     for port in open_ports:
         scan_ports.append({
             "port": port.get("port"),
+            "protocol": port.get("protocol", "tcp"),
+            "state": port.get("state", "open"),
             "service": port.get("service"),
             "banner": port.get("banner"),
-            "risk": port.get("risk")
+            "risk": port.get("risk"),
+            "source": port.get("source", "socket")
         })
 
     for tech_item in cve_results:
@@ -2390,8 +2393,13 @@ def build_strict_remediation_plan(separated):
 
 async def run_nmap_scan(host):
     """
-    Safe defensive Nmap scan.
-    Runs blocking python-nmap inside a thread so FastAPI event loop does not break.
+    Safe defensive Nmap scan with socket fallback.
+
+    Why this version is better:
+    - Uses scanner.all_hosts() because Nmap may return the resolved IP instead of the original domain.
+    - Keeps only truly open ports from Nmap.
+    - Falls back to a safe TCP connect scan for common ports if Nmap returns no ports.
+    - Never crashes the full scan if Nmap is missing, blocked, or returns unexpected output.
     """
     result = {
         "enabled": False,
@@ -2400,13 +2408,17 @@ async def run_nmap_scan(host):
         "error": None
     }
 
+    scan_ports = sorted(set(COMMON_PORTS + RISKY_PORTS + [3306, 5432, 6379, 27017]))
+
     def nmap_job():
         try:
             scanner = nmap.PortScanner()
 
+            ports_arg = ",".join(str(p) for p in scan_ports)
+
             scanner.scan(
-                host,
-                arguments="-Pn -sV -T3 --top-ports 100"
+                hosts=host,
+                arguments=f"-Pn -sT -sV -T3 --host-timeout 25s -p {ports_arg}"
             )
 
             result["enabled"] = True
@@ -2421,15 +2433,22 @@ async def run_nmap_scan(host):
             for proto in scanner[scan_host].all_protocols():
                 for port in sorted(scanner[scan_host][proto].keys()):
                     data = scanner[scan_host][proto][port]
+                    state = data.get("state")
+
+                    if state != "open":
+                        continue
 
                     result["ports"].append({
-                        "port": port,
+                        "port": int(port),
                         "protocol": proto,
-                        "state": data.get("state"),
-                        "service": data.get("name"),
-                        "product": data.get("product"),
-                        "version": data.get("version"),
-                        "extra_info": data.get("extrainfo")
+                        "state": state,
+                        "service": data.get("name") or PORT_SERVICES.get(int(port), "Unknown"),
+                        "product": data.get("product") or "",
+                        "version": data.get("version") or "",
+                        "extra_info": data.get("extrainfo") or "",
+                        "banner": None,
+                        "risk": "RISKY" if int(port) in RISKY_PORTS else "NORMAL",
+                        "source": "nmap"
                     })
 
             return result
@@ -2438,7 +2457,36 @@ async def run_nmap_scan(host):
             result["error"] = str(e)
             return result
 
-    return await asyncio.to_thread(nmap_job)
+    nmap_result = await asyncio.to_thread(nmap_job)
+
+    if nmap_result.get("ports"):
+        nmap_result["ports"] = dedupe_dicts(nmap_result["ports"], ["port", "protocol"])
+        return nmap_result
+
+    fallback_ports = []
+
+    for port in scan_ports:
+        item = await check_port(host, port)
+
+        if item:
+            item["state"] = "open"
+            item["protocol"] = "tcp"
+            item["source"] = "socket-fallback"
+            item["product"] = item.get("product", "")
+            item["version"] = item.get("version", "")
+            item["extra_info"] = item.get("extra_info", "")
+            fallback_ports.append(item)
+
+    nmap_result["ports"] = dedupe_dicts(fallback_ports, ["port", "protocol"])
+
+    if fallback_ports:
+        nmap_result["enabled"] = True
+        nmap_result["error"] = None
+    elif not nmap_result.get("error"):
+        nmap_result["error"] = "No open ports found by Nmap or socket fallback"
+
+    return nmap_result
+
 
 async def analyze(target, profile="full"):
     profile = profile.lower()
@@ -3514,7 +3562,7 @@ async def analyze(target, profile="full"):
             "found": found_headers,
             "missing": missing_headers
         },
-        "open_ports": open_ports,
+        "open_ports": nmap_result.get("ports") or open_ports,
         "nmap_scan": locals().get("nmap_result", {
             "enabled": False,
             "host": host,
