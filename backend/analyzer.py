@@ -2606,6 +2606,7 @@ async def analyze(target, profile="full"):
             advanced_exposure_task,
             graphql_introspection_task,
             ports_task,
+            nmap_task,
             sensitive_task
         )
 
@@ -3461,7 +3462,12 @@ async def analyze(target, profile="full"):
             "missing": missing_headers
         },
         "open_ports": open_ports,
-        "nmap_scan": nmap_result,
+        "nmap_scan": locals().get("nmap_result", {
+            "enabled": False,
+            "host": host,
+            "ports": [],
+            "error": "Nmap result was not initialized"
+        }),
         "technologies": technologies,
         "cve_results": cve_results,
         "waf": waf,
