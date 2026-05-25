@@ -69,12 +69,15 @@ app.add_middleware(
         "https://threat-frontend.onrender.com",
         "https://threat-scanner-saas-2.onrender.com",
         "https://threat-scanner-saas-1.onrender.com",
+        "https://threat-scanner-saas.onrender.com",
         "http://localhost:3000",
-        "http://127.0.0.1:5500"
+        "http://127.0.0.1:5500",
+        "*"
     ],
-    allow_credentials=False,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 init_db()
