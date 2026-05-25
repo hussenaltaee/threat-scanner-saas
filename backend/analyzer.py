@@ -2388,6 +2388,58 @@ def build_strict_remediation_plan(separated):
 
 
 
+async def run_nmap_scan(host):
+    """
+    Safe defensive Nmap scan.
+    Runs blocking python-nmap inside a thread so FastAPI event loop does not break.
+    """
+    result = {
+        "enabled": False,
+        "host": host,
+        "ports": [],
+        "error": None
+    }
+
+    def nmap_job():
+        try:
+            scanner = nmap.PortScanner()
+
+            scanner.scan(
+                host,
+                arguments="-Pn -sV -T3 --top-ports 100"
+            )
+
+            result["enabled"] = True
+
+            all_hosts = scanner.all_hosts()
+            scan_host = host if host in all_hosts else (all_hosts[0] if all_hosts else None)
+
+            if not scan_host:
+                result["error"] = "Nmap did not return host results"
+                return result
+
+            for proto in scanner[scan_host].all_protocols():
+                for port in sorted(scanner[scan_host][proto].keys()):
+                    data = scanner[scan_host][proto][port]
+
+                    result["ports"].append({
+                        "port": port,
+                        "protocol": proto,
+                        "state": data.get("state"),
+                        "service": data.get("name"),
+                        "product": data.get("product"),
+                        "version": data.get("version"),
+                        "extra_info": data.get("extrainfo")
+                    })
+
+            return result
+
+        except Exception as e:
+            result["error"] = str(e)
+            return result
+
+    return await asyncio.to_thread(nmap_job)
+
 async def analyze(target, profile="full"):
     profile = profile.lower()
 
@@ -2606,6 +2658,7 @@ async def analyze(target, profile="full"):
             advanced_exposure_task,
             graphql_introspection_task,
             ports_task,
+            nmap_task,
             sensitive_task
         )
 
