@@ -3646,3 +3646,61 @@ REAL_CVE_LOOKUP = {
     "Apache": ["CVE-2023-25690"],
     "Nginx": ["CVE-2023-44487"]
 }
+
+
+# ===== Threat Intelligence + CVSS =====
+
+CVSS_SEVERITY_MAP = {
+    "CRITICAL": 9.5,
+    "HIGH": 8.0,
+    "MEDIUM": 5.5,
+    "LOW": 2.5
+}
+
+TECH_CVE_MAP = {
+    "Apache": [
+        {"id":"CVE-2023-25690","severity":"HIGH","cvss":8.6},
+    ],
+    "Nginx": [
+        {"id":"CVE-2023-44487","severity":"HIGH","cvss":7.5},
+    ],
+    "WordPress": [
+        {"id":"CVE-2024-28000","severity":"CRITICAL","cvss":9.8},
+    ],
+    "OpenSSH": [
+        {"id":"CVE-2024-6387","severity":"HIGH","cvss":8.1},
+    ]
+}
+
+def generate_cve_matches(technologies):
+    output = []
+
+    for tech in technologies:
+        if tech in TECH_CVE_MAP:
+            output.append({
+                "technology": tech,
+                "cves": TECH_CVE_MAP[tech]
+            })
+
+    return output
+
+def calculate_cvss(findings):
+    total = 0
+
+    for item in findings:
+        sev = str(item.get("severity","LOW")).upper()
+        total += CVSS_SEVERITY_MAP.get(sev,1)
+
+    return round(min(total,10),1)
+
+
+
+async def lookup_geoip(ip):
+    return {
+        "ip": ip,
+        "asn": "AS15169",
+        "provider": "Example ISP",
+        "country": "Unknown",
+        "city": "Unknown"
+    }
+

@@ -766,7 +766,7 @@ async function scan(){
     console.log("SCAN RESULT:", data);
 
     if(typeof showResult === "function"){
-      showResult(data);
+      showResult(data); updateDashboard(data);
     }else{
       $("out").innerHTML = `
         <div class="card INFO">

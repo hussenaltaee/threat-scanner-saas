@@ -792,3 +792,12 @@ def calculate_realistic_risk(findings, vulns, open_ports):
 
     return risk, score
 
+
+
+@app.get("/analytics")
+def analytics():
+    return {
+        "status":"ok",
+        "message":"Dashboard analytics enabled"
+    }
+
