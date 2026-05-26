@@ -283,7 +283,9 @@ def add_finding(
         "evidence": evidence,
         "fix": fix,
         "confidence": confidence,
-        "evidence_type": evidence_type
+        "evidence_type": evidence_type,
+        "affected_url": None,
+        "fix_location": None
     })
 
 
@@ -306,7 +308,9 @@ def add_vuln(
         "impact": impact,
         "fix": fix,
         "confidence": confidence,
-        "evidence_type": evidence_type
+        "evidence_type": evidence_type,
+        "affected_url": None,
+        "fix_location": None
     })
 
 
@@ -943,7 +947,9 @@ async def check_nikto_paths(client, base_url):
                 "status": res.status_code,
                 "url": str(res.url),
                 "evidence": f"Matched {item['path']} with HTTP {res.status_code}",
-                "fix": item["fix"]
+                "fix": item["fix"],
+                "affected_url": str(res.url),
+                "fix_location": item["path"]
             })
 
     return results
@@ -1596,7 +1602,9 @@ async def validate_sqli_behavior(client, base_url):
                     "confidence": "MEDIUM",
                     "evidence_type": "database_error_pattern",
                     "evidence": f"Database error pattern observed with payload pair: {truthy} / {falsy}",
-                    "fix": "Use parameterized queries and suppress detailed database errors in production."
+                    "fix": "Use parameterized queries and suppress detailed database errors in production.",
+                    "affected_url": true_url,
+                    "fix_location": "Query parameter: scan_test"
                 })
 
             elif true_diff >= 25 and false_diff >= 25 and pair_delta > 80:
@@ -1653,7 +1661,9 @@ async def validate_xss_reflection(client, base_url):
                 "confidence": confidence,
                 "evidence_type": context,
                 "evidence": f"Payload reflected in {context}: {payload}",
-                "fix": "Escape output based on context, sanitize input, and use a strong Content-Security-Policy."
+                "fix": "Escape output based on context, sanitize input, and use a strong Content-Security-Policy.",
+                "affected_url": test_url,
+                "fix_location": "Query parameter: scan_xss"
             })
 
         except Exception:

@@ -410,7 +410,7 @@ function renderScanResult(data){
       <p><b>Severity:</b> ${esc(f.severity || "INFO")}</p>
       <p><b>Category:</b> ${esc(f.category || "General")}</p>
       <p><b>Evidence:</b> ${esc(f.evidence || "N/A")}</p>
-      <p><b>Fix:</b> ${esc(f.fix || "Review manually")}</p>
+      <p><b>Fix:</b> ${esc(f.fix || "Review manually")}</p>${f.affected_url ? `<p><b>Affected URL:</b> <a href="${esc(f.affected_url)}" target="_blank">${esc(f.affected_url)}</a></p>` : ""}${f.fix_location ? `<p><b>Fix Location:</b> ${esc(f.fix_location)}</p>` : ""}
     </div>`).join("") : "<p class='muted'>No findings returned</p>";
 
   const cveHTML = cveGroups.length ? cveGroups.map(group=>`
