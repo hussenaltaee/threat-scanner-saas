@@ -51,6 +51,174 @@ function riskClass(risk) {
   return "unknown";
 }
 
+
+// =========================
+// Professional Evidence Helpers
+// =========================
+function extractFirstUrl(text) {
+  const value = String(text || "");
+  const match = value.match(/https?:\/\/[^\s"'<>]+/i);
+  return match ? match[0] : null;
+}
+
+function getAffectedUrl(item) {
+  return item?.affected_url || item?.url || extractFirstUrl(item?.evidence) || null;
+}
+
+function cvssFromSeverity(severity) {
+  const s = String(severity || "INFO").toUpperCase();
+  if (s === "CRITICAL") return "9.8";
+  if (s === "HIGH") return "8.1";
+  if (s === "MEDIUM") return "5.6";
+  if (s === "LOW") return "3.1";
+  return "0.0";
+}
+
+function confidencePercent(confidence) {
+  const c = String(confidence || "MEDIUM").toUpperCase();
+  if (c === "HIGH") return "90%";
+  if (c === "LOW") return "45%";
+  return "70%";
+}
+
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    alert("Copied");
+  } catch (e) {
+    const t = document.createElement("textarea");
+    t.value = text;
+    document.body.appendChild(t);
+    t.select();
+    document.execCommand("copy");
+    document.body.removeChild(t);
+    alert("Copied");
+  }
+}
+
+function openUrl(url) {
+  if (!url) return;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
+function renderUrlActions(url) {
+  if (!url) return "";
+  const safe = esc(url);
+  return `
+    <div class="affected-box">
+      <div class="affected-label">🔗 Affected URL</div>
+      <a class="affected-link" href="${safe}" target="_blank" rel="noopener noreferrer">${safe}</a>
+      <div class="affected-actions">
+        <button type="button" onclick="openUrl('${safe}')">Open</button>
+        <button type="button" onclick="copyText('${safe}')">Copy</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderMetaBadges(item) {
+  const severity = esc(item?.severity || "INFO");
+  const cvss = esc(item?.cvss || item?.score || cvssFromSeverity(item?.severity));
+  const confidence = esc(item?.confidence_percent || item?.confidence || confidencePercent(item?.confidence));
+  const status = esc(item?.status || "INFO");
+
+  return `
+    <div class="meta-badges">
+      <span class="meta-badge severity-${severity.toLowerCase()}">Severity: ${severity}</span>
+      <span class="meta-badge">CVSS: ${cvss}</span>
+      <span class="meta-badge">Confidence: ${confidence}</span>
+      <span class="meta-badge">Status: ${status}</span>
+    </div>
+  `;
+}
+
+function buildSeverityCounts(items) {
+  const counts = {CRITICAL:0,HIGH:0,MEDIUM:0,LOW:0,INFO:0};
+  (items || []).forEach(item => {
+    const s = String(item?.severity || "INFO").toUpperCase();
+    if (counts[s] !== undefined) counts[s]++;
+    else counts.INFO++;
+  });
+  return counts;
+}
+
+function renderSeverityBars(items) {
+  const counts = buildSeverityCounts(items);
+  const total = Math.max(Object.values(counts).reduce((a,b)=>a+b,0), 1);
+
+  return `
+    <div class="severity-bars">
+      ${Object.keys(counts).map(k => {
+        const percent = Math.round((counts[k] / total) * 100);
+        return `
+          <div class="sev-row">
+            <span>${k}</span>
+            <div class="sev-track"><div class="sev-fill ${k.toLowerCase()}" style="width:${percent}%"></div></div>
+            <b>${counts[k]}</b>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+function renderProgressSteps() {
+  return `
+    <div class="progress-steps">
+      <div class="step done">✓ Target normalization</div>
+      <div class="step done">✓ DNS analysis</div>
+      <div class="step done">✓ SSL/TLS analysis</div>
+      <div class="step active">⟳ Port scanning</div>
+      <div class="step">• WAF detection</div>
+      <div class="step">• CVE enumeration</div>
+      <div class="step">• Validation engine</div>
+    </div>
+  `;
+}
+
+function renderThreatIntel(data) {
+  const ti = data.ip_intelligence || data.whois_asn || data.asn_info || data.geoip || {};
+  if (!ti || Object.keys(ti).length === 0) {
+    return `<p class="muted">No threat intelligence data returned.</p>`;
+  }
+
+  return `
+    <div class="intel-grid">
+      <div class="mini-result"><b>ASN</b><span>${esc(ti.asn || "Unknown")}</span></div>
+      <div class="mini-result"><b>ISP</b><span>${esc(ti.isp || ti.provider || "Unknown")}</span></div>
+      <div class="mini-result"><b>Organization</b><span>${esc(ti.organization || ti.org || "Unknown")}</span></div>
+      <div class="mini-result"><b>Country</b><span>${esc(ti.country || "Unknown")}</span></div>
+      <div class="mini-result"><b>City</b><span>${esc(ti.city || "Unknown")}</span></div>
+      <div class="mini-result"><b>Reverse DNS</b><span>${esc(ti.reverse_dns || "Unknown")}</span></div>
+    </div>
+  `;
+}
+
+function renderAttackSurface(data) {
+  const endpoints = data.api_endpoints || data.discovered_endpoints || [];
+  const subdomains = Array.isArray(data.subdomains) ? data.subdomains : [];
+  const ports = Array.isArray(data.open_ports) ? data.open_ports : [];
+  const exposures = data.advanced_exposures || data.exposures || [];
+
+  return `
+    <div class="attack-grid">
+      <div class="mini-result"><b>API Endpoints</b><span>${endpoints.length || 0}</span></div>
+      <div class="mini-result"><b>Subdomains</b><span>${subdomains.length || 0}</span></div>
+      <div class="mini-result"><b>Open Ports</b><span>${ports.length || 0}</span></div>
+      <div class="mini-result"><b>Exposures</b><span>${exposures.length || 0}</span></div>
+    </div>
+    ${
+      endpoints.length
+      ? `<h4>Discovered APIs</h4>${endpoints.slice(0,20).map(e => {
+          const endpoint = e.endpoint || e.url || e;
+          return `<div class="mini-result"><b>${esc(endpoint)}</b><span>${esc(e.severity || "INFO")}</span></div>`;
+        }).join("")}`
+      : `<p class="muted">No API endpoints returned.</p>`
+    }
+  `;
+}
+
+
 // =========================
 // LOGIN
 // =========================
@@ -179,7 +347,7 @@ async function scan() {
         <h2>🔍 Scanning Target...</h2>
         <p><b>Target:</b> ${esc(target)}</p>
         <p><b>Profile:</b> ${esc(profile)}</p>
-        <p class="muted">Please wait while the scanner checks ports, SSL, DNS, headers, WAF, and findings.</p>
+        <p class="muted">Please wait while the scanner checks ports, SSL, DNS, headers, WAF, CVEs, and findings.</p>${renderProgressSteps()}
       </div>
     `;
   }
@@ -230,6 +398,8 @@ function renderScanResult(data) {
 
   const findings = Array.isArray(data.findings) ? data.findings : [];
   const vulns = Array.isArray(data.vulnerability_checks) ? data.vulnerability_checks : [];
+  const allFindings = [...findings, ...vulns];
+
   const cveGroups = Array.isArray(data.cve_results) ? data.cve_results : [];
   const technologies = Array.isArray(data.technologies) ? data.technologies : [];
   const subdomains = Array.isArray(data.subdomains) ? data.subdomains : [];
@@ -243,19 +413,30 @@ function renderScanResult(data) {
         <span>${esc(p.service || "Unknown")} · ${esc(p.protocol || "tcp")} · ${esc(p.state || "open")}</span>
         ${p.banner ? `<small>Banner: ${esc(p.banner)}</small>` : ""}
         ${p.product || p.version ? `<small>Product: ${esc(p.product || "")} ${esc(p.version || "")}</small>` : ""}
+        ${p.risk ? `<small>Risk: ${esc(p.risk)}</small>` : ""}
       </div>
     `).join("")
     : "<p class='muted'>No open ports returned</p>";
 
-  const findingHTML = [...findings, ...vulns].length
-    ? [...findings, ...vulns].map(f => `
-      <div class="finding ${riskClass(f.severity)}">
-        <h4>${esc(f.title || f.name || "Finding")}</h4>
-        <p><b>Severity:</b> ${esc(f.severity || "INFO")}</p>
-        <p><b>Evidence:</b> ${esc(f.evidence || "N/A")}</p>
-        <p><b>Fix:</b> ${esc(f.fix || "Review manually")}</p>
-      </div>
-    `).join("")
+  const findingHTML = allFindings.length
+    ? allFindings.map(f => {
+        const affectedUrl = getAffectedUrl(f);
+        return `
+          <div class="finding ${riskClass(f.severity)}">
+            <div class="finding-head">
+              <h4>${esc(f.title || f.name || f.type || "Finding")}</h4>
+              <span class="finding-status">${esc(f.status || "INFO")}</span>
+            </div>
+            ${renderMetaBadges(f)}
+            <p><b>Category:</b> ${esc(f.category || "General")}</p>
+            <p><b>Description:</b> ${esc(f.description || f.impact || "N/A")}</p>
+            <p><b>Evidence:</b> ${esc(f.evidence || "N/A")}</p>
+            ${renderUrlActions(affectedUrl)}
+            ${f.fix_location ? `<p><b>Fix Location:</b> ${esc(f.fix_location)}</p>` : ""}
+            <div class="fix-box"><b>Recommended Fix</b><p>${esc(f.fix || "Review manually")}</p></div>
+          </div>
+        `;
+      }).join("")
     : "<p class='muted'>No findings returned</p>";
 
   const cveHTML = cveGroups.length
@@ -269,6 +450,7 @@ function renderScanResult(data) {
               <b>${esc(c.id || c.cve_id || "CVE")}</b>
               <span>${esc(c.severity || "UNKNOWN")} · CVSS ${esc(c.score || c.cvss || "N/A")}</span>
               <small>${esc(c.description || "")}</small>
+              ${c.url ? renderUrlActions(c.url) : ""}
             </div>
           `).join("")
           : "<p class='muted'>No CVEs found</p>"
@@ -283,6 +465,7 @@ function renderScanResult(data) {
         <b>${esc(s.subdomain)}</b>
         <span>Status: ${esc(s.status_code || "N/A")} · HTTPS: ${s.https ? "Yes" : "No"}</span>
         <small>${esc(s.final_url || "")}</small>
+        ${s.final_url ? renderUrlActions(s.final_url) : ""}
       </div>
     `).join("")
     : "<p class='muted'>No subdomains returned</p>";
@@ -304,7 +487,12 @@ function renderScanResult(data) {
         <div class="box"><span>Target Type</span><h3>${esc(data.target_type || "domain")}</h3></div>
         <div class="box"><span>Open Ports</span><h3>${allPorts.length}</h3></div>
         <div class="box"><span>CVEs</span><h3>${cveCount}</h3></div>
-        <div class="box"><span>Findings</span><h3>${findings.length + vulns.length}</h3></div>
+        <div class="box"><span>Findings</span><h3>${allFindings.length}</h3></div>
+      </div>
+
+      <div class="result-card wide">
+        <h3>📊 Severity Overview</h3>
+        ${renderSeverityBars(allFindings)}
       </div>
 
       <div class="result-panels">
@@ -316,6 +504,7 @@ function renderScanResult(data) {
           <p><b>IP:</b> ${esc(data.ip || "-")}</p>
           <p><b>Final URL:</b> ${esc(data.final_url || "-")}</p>
           <p><b>Status:</b> ${esc(data.status_code || "-")}</p>
+          ${data.final_url ? renderUrlActions(data.final_url) : ""}
         </div>
 
         <div class="result-card">
@@ -343,6 +532,7 @@ function renderScanResult(data) {
           <p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p>
           <p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p>
           <p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p>
+          <p><b>Issues:</b> ${safeList(data.dns_security?.issues)}</p>
         </div>
 
         <div class="result-card">
@@ -358,6 +548,16 @@ function renderScanResult(data) {
         </div>
 
         <div class="result-card wide">
+          <h3>🌍 Threat Intelligence / ASN</h3>
+          ${renderThreatIntel(data)}
+        </div>
+
+        <div class="result-card wide">
+          <h3>🕸️ Attack Surface Map</h3>
+          ${renderAttackSurface(data)}
+        </div>
+
+        <div class="result-card wide">
           <h3>🧬 CVE Results</h3>
           ${cveHTML}
         </div>
@@ -368,7 +568,7 @@ function renderScanResult(data) {
         </div>
 
         <div class="result-card wide">
-          <h3>🚨 Findings</h3>
+          <h3>🚨 Findings & Evidence</h3>
           ${findingHTML}
         </div>
 
@@ -381,7 +581,6 @@ function renderScanResult(data) {
     </section>
   `;
 }
-
 // =========================
 // Add dashboard styles dynamically
 // Works even if dashboard.html CSS is old
@@ -574,6 +773,165 @@ function renderScanResult(data) {
     }
 
     .muted{color:#a3a3a3}
+
+
+    .meta-badges{
+      display:flex;
+      flex-wrap:wrap;
+      gap:8px;
+      margin:10px 0;
+    }
+
+    .meta-badge{
+      display:inline-flex;
+      align-items:center;
+      gap:5px;
+      padding:6px 9px;
+      border-radius:999px;
+      background:#111;
+      border:1px solid rgba(255,255,255,.12);
+      color:#d4d4d4;
+      font-size:12px;
+      font-weight:800;
+    }
+
+    .severity-critical,.severity-high{border-color:rgba(239,68,68,.5);color:#fecaca}
+    .severity-medium{border-color:rgba(245,158,11,.5);color:#fde68a}
+    .severity-low{border-color:rgba(34,197,94,.5);color:#bbf7d0}
+
+    .finding-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:8px;
+    }
+
+    .finding-head h4{margin:0}
+
+    .finding-status{
+      padding:5px 9px;
+      border-radius:999px;
+      font-size:11px;
+      font-weight:900;
+      background:rgba(255,255,255,.08);
+      border:1px solid rgba(255,255,255,.12);
+      color:#fff;
+    }
+
+    .affected-box{
+      margin:12px 0;
+      padding:12px;
+      border-radius:14px;
+      background:rgba(96,165,250,.08);
+      border:1px solid rgba(96,165,250,.28);
+    }
+
+    .affected-label{
+      font-size:12px;
+      color:#93c5fd;
+      font-weight:900;
+      margin-bottom:6px;
+    }
+
+    .affected-link{
+      display:block;
+      word-break:break-all;
+      color:#dbeafe;
+      line-height:1.45;
+      margin-bottom:10px;
+      text-decoration:underline;
+      text-underline-offset:3px;
+    }
+
+    .affected-actions{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+
+    .affected-actions button{
+      padding:8px 10px !important;
+      font-size:12px !important;
+    }
+
+    .fix-box{
+      margin-top:12px;
+      padding:12px;
+      background:rgba(34,197,94,.07);
+      border:1px solid rgba(34,197,94,.22);
+      border-radius:14px;
+    }
+
+    .fix-box b{
+      color:#bbf7d0;
+    }
+
+    .fix-box p{
+      margin:7px 0 0;
+    }
+
+    .severity-bars{
+      display:grid;
+      gap:10px;
+    }
+
+    .sev-row{
+      display:grid;
+      grid-template-columns:80px 1fr 32px;
+      align-items:center;
+      gap:10px;
+      color:#d4d4d4;
+      font-size:13px;
+      font-weight:800;
+    }
+
+    .sev-track{
+      height:10px;
+      border-radius:999px;
+      background:#080808;
+      border:1px solid rgba(255,255,255,.08);
+      overflow:hidden;
+    }
+
+    .sev-fill{
+      height:100%;
+      border-radius:999px;
+      background:#60a5fa;
+    }
+
+    .sev-fill.critical,.sev-fill.high{background:#ef4444}
+    .sev-fill.medium{background:#f59e0b}
+    .sev-fill.low{background:#22c55e}
+    .sev-fill.info{background:#60a5fa}
+
+    .progress-steps{
+      display:grid;
+      gap:8px;
+      max-width:420px;
+      margin:18px auto 0;
+      text-align:left;
+    }
+
+    .step{
+      padding:9px 11px;
+      background:#070707;
+      border:1px solid rgba(255,255,255,.09);
+      border-radius:12px;
+      color:#a3a3a3;
+      font-weight:800;
+      font-size:13px;
+    }
+
+    .step.done{color:#bbf7d0;border-color:rgba(34,197,94,.25)}
+    .step.active{color:#dbeafe;border-color:rgba(96,165,250,.35)}
+
+    .intel-grid,.attack-grid{
+      display:grid;
+      grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+      gap:10px;
+    }
+
 
     @media(max-width:850px){
       .result-panels{grid-template-columns:1fr}
