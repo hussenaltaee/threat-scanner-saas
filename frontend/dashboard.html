@@ -2,304 +2,674 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Threat Scanner Dashboard</title>
+<title>Threat Scanner Control Center</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 :root{
-    --bg:#0f172a;
-    --panel:#111827;
-    --card:#1e293b;
-    --muted:#94a3b8;
-    --text:#f8fafc;
-    --line:#334155;
-    --blue:#60a5fa;
-    --green:#22c55e;
-    --yellow:#f59e0b;
-    --red:#ef4444;
-    --critical:#dc2626;
+  --bg:#030303;
+  --panel:rgba(18,18,18,.78);
+  --panel2:rgba(28,28,28,.58);
+  --card:rgba(20,20,20,.86);
+  --text:#f5f5f5;
+  --muted:#a3a3a3;
+  --line:rgba(255,255,255,.14);
+  --line2:rgba(255,255,255,.08);
+  --white:#fff;
+  --green:#22c55e;
+  --yellow:#f59e0b;
+  --red:#ef4444;
+  --critical:#dc2626;
+  --blue:#60a5fa;
 }
 *{box-sizing:border-box}
-body{margin:0;font-family:Arial,Helvetica,sans-serif;background:linear-gradient(135deg,#000000,#111111 45%,#1f2937 100%);color:var(--text);min-height:100vh}
-header{position:sticky;top:0;z-index:20;background:rgba(0,0,0,.88);backdrop-filter:blur(12px);border-bottom:1px solid var(--line);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
-h1{margin:0;font-size:24px}.sub{color:var(--muted);font-size:13px;margin-top:4px}.wrap{max-width:1200px;margin:auto;padding:22px}
-.actions{display:flex;gap:10px;flex-wrap:wrap}button,a.btn{background:var(--blue);color:#020617;border:none;border-radius:10px;padding:10px 13px;font-weight:bold;cursor:pointer;text-decoration:none;display:inline-block}.danger{background:var(--red);color:#fff}.ghost{background:#334155;color:#fff}.green{background:var(--green);color:#052e16}
-.toolbar{display:grid;grid-template-columns:1.5fr .8fr .8fr auto;gap:10px;margin:18px 0}.toolbar input,.toolbar select{width:100%;padding:12px;border-radius:10px;border:1px solid var(--line);background:#020617;color:#fff}.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0}.card{background:rgba(17,24,39,.95);backdrop-filter:blur(14px);border:1px solid var(--line);border-left:6px solid var(--blue);border-radius:16px;padding:16px;box-shadow:0 12px 28px rgba(0,0,0,.25)}.card h3{margin:0 0 8px}.card p{line-height:1.55}.metric p{font-size:26px;font-weight:bold;margin:6px 0 0}.low{border-left-color:var(--green)}.medium{border-left-color:var(--yellow)}.high{border-left-color:var(--red)}.critical{border-left-color:var(--critical)}.unknown{border-left-color:var(--muted)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}.scan-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.badge{display:inline-block;padding:5px 9px;border-radius:999px;background:#334155;color:#fff;font-weight:bold;font-size:12px}.badge.LOW{background:#14532d}.badge.MEDIUM{background:#78350f}.badge.HIGH{background:#7f1d1d}.badge.CRITICAL{background:#7f1d1d}.muted{color:var(--muted)}.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.hidden{display:none}.report-section{background:#020617;border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}.mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}.mini{background:#0f172a;border:1px solid #1f2937;border-radius:12px;padding:10px}.mini b{display:block;color:var(--muted);font-size:12px;margin-bottom:5px}.finding{background:#0f172a;border:1px solid var(--line);border-left:4px solid var(--blue);border-radius:12px;padding:12px;margin:10px 0}pre{white-space:pre-wrap;word-break:break-word;background:#020617;border:1px solid var(--line);padding:14px;border-radius:12px;max-height:420px;overflow:auto}.toast{position:fixed;right:18px;bottom:18px;background:#020617;border:1px solid var(--line);border-left:5px solid var(--blue);border-radius:12px;padding:12px 14px;box-shadow:0 12px 30px rgba(0,0,0,.4);display:none;z-index:99}a{color:var(--blue)}
-@media(max-width:800px){header{padding:14px}.wrap{padding:14px}.toolbar{grid-template-columns:1fr}h1{font-size:21px}.actions{width:100%}.actions button,.actions a{flex:1;text-align:center}.metric p{font-size:22px}}
+html{scroll-behavior:smooth}
+body{
+  margin:0;
+  min-height:100vh;
+  font-family:Inter,Arial,Helvetica,sans-serif;
+  color:var(--text);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(255,255,255,.12), transparent 24%),
+    radial-gradient(circle at 12% 70%, rgba(255,255,255,.06), transparent 30%),
+    linear-gradient(135deg,#000,#0b0b0b 50%,#1f2937);
+}
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  opacity:.22;
+  background-image:
+    linear-gradient(rgba(255,255,255,.045) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(255,255,255,.045) 1px,transparent 1px);
+  background-size:54px 54px;
+  mask-image:linear-gradient(to bottom,transparent,#000 16%,#000 82%,transparent);
+}
+a{color:#e5e7eb;text-decoration:none}
+button,input,select{font-family:inherit}
+header{
+  position:sticky;
+  top:0;
+  z-index:30;
+  background:rgba(0,0,0,.84);
+  backdrop-filter:blur(20px);
+  border-bottom:1px solid var(--line);
+}
+.nav{
+  max-width:1300px;
+  margin:auto;
+  padding:16px 22px;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:14px}
+.logo{
+  width:46px;height:46px;border-radius:15px;
+  display:grid;place-items:center;
+  background:linear-gradient(180deg,rgba(255,255,255,.18),rgba(255,255,255,.06));
+  border:1px solid var(--line);
+  box-shadow:0 18px 40px rgba(0,0,0,.45);
+  font-size:23px;
+}
+.brand h1{margin:0;font-size:22px;letter-spacing:.5px}
+.brand p{margin:4px 0 0;color:var(--muted);font-size:13px}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn,button{
+  border:1px solid rgba(255,255,255,.16);
+  border-radius:13px;
+  padding:11px 14px;
+  background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.06));
+  color:#fff;
+  font-weight:850;
+  cursor:pointer;
+  transition:.2s ease;
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+}
+.btn:hover,button:hover{transform:translateY(-1px);box-shadow:0 14px 35px rgba(0,0,0,.35)}
+.danger{background:linear-gradient(180deg,rgba(239,68,68,.9),rgba(127,29,29,.9))}
+.green{background:linear-gradient(180deg,rgba(34,197,94,.9),rgba(20,83,45,.9))}
+.ghost{background:rgba(255,255,255,.04)}
+.wrap{max-width:1300px;margin:auto;padding:22px}
+.layout{display:grid;grid-template-columns:390px 1fr;gap:18px;align-items:start}
+.panel,.card,.result-card{
+  background:linear-gradient(180deg,rgba(255,255,255,.075),rgba(255,255,255,.028));
+  border:1px solid var(--line);
+  border-radius:22px;
+  box-shadow:0 26px 70px rgba(0,0,0,.42);
+  backdrop-filter:blur(18px);
+}
+.panel{padding:18px}
+.panel h2,.panel h3,.card h3,.result-card h3{margin-top:0}
+.muted{color:var(--muted)}
+.field{margin:14px 0}
+.field label{display:block;font-size:13px;color:#cfcfcf;font-weight:800;margin-bottom:8px}
+input,select{
+  width:100%;
+  border:1px solid var(--line);
+  border-radius:15px;
+  padding:15px 14px;
+  background:#080808;
+  color:#fff;
+  outline:none;
+  font-size:15px;
+}
+input:focus,select:focus{border-color:rgba(255,255,255,.42);box-shadow:0 0 0 4px rgba(255,255,255,.06)}
+.scan-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+.status{
+  margin-top:14px;
+  padding:12px;
+  border-radius:15px;
+  background:#070707;
+  border:1px solid var(--line2);
+  color:var(--muted);
+  line-height:1.55;
+}
+.summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:12px;margin:0 0 16px}
+.card{padding:16px;border-left:5px solid var(--blue)}
+.metric p{font-size:26px;font-weight:900;margin:7px 0 0}
+.low{border-left-color:var(--green)}.medium{border-left-color:var(--yellow)}.high{border-left-color:var(--red)}.critical{border-left-color:var(--critical)}.unknown{border-left-color:var(--muted)}
+.tabs{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+.tab{
+  padding:10px 12px;
+  border-radius:999px;
+  border:1px solid var(--line);
+  color:#cfcfcf;
+  background:#080808;
+  font-size:13px;
+  font-weight:900;
+}
+.tab.active{color:#fff;border-color:rgba(255,255,255,.42);box-shadow:0 0 20px rgba(255,255,255,.06)}
+.section{display:none}
+.section.active{display:block}
+.toolbar{display:grid;grid-template-columns:1.5fr .8fr .8fr auto;gap:10px;margin-bottom:16px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.scan-title{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.badge{display:inline-block;padding:6px 10px;border-radius:999px;background:#222;color:#fff;font-weight:900;font-size:12px;border:1px solid var(--line)}
+.badge.LOW{background:#14532d}.badge.MEDIUM{background:#78350f}.badge.HIGH,.badge.CRITICAL{background:#7f1d1d}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.out{min-height:520px}
+.empty{
+  min-height:520px;
+  display:grid;
+  place-items:center;
+  text-align:center;
+  border:1px dashed var(--line);
+  border-radius:22px;
+  color:var(--muted);
+  background:rgba(0,0,0,.18);
+  padding:24px;
+}
+.result-header{
+  display:flex;justify-content:space-between;align-items:center;gap:14px;
+  padding:20px;border-radius:22px;margin-bottom:16px;
+  background:linear-gradient(180deg,rgba(255,255,255,.09),rgba(255,255,255,.03));
+  border:1px solid var(--line);
+}
+.result-header h2{margin:0;font-size:28px}.result-header p{margin:6px 0 0;color:var(--muted)}
+.risk-pill{padding:10px 16px;border-radius:999px;font-weight:900;background:#0a0a0a;border:1px solid var(--line)}
+.result-grid,.mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:12px;margin-bottom:16px}
+.box,.mini{
+  background:#070707;border:1px solid var(--line2);border-radius:16px;padding:14px;
+}
+.box span,.mini b{display:block;color:var(--muted);font-size:12px;margin-bottom:7px}.box h3{margin:0;font-size:24px}
+.result-panels{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.result-card{padding:18px;overflow:auto}
+.result-card.wide{grid-column:1/-1}
+.mini-result,.finding{
+  padding:12px;margin:10px 0;background:#070707;border:1px solid var(--line2);
+  border-radius:12px;border-left:4px solid var(--blue);
+}
+.finding.high,.finding.critical{border-left-color:var(--red)}.finding.medium{border-left-color:var(--yellow)}.finding.low{border-left-color:var(--green)}
+.mini-result b{display:block;margin-bottom:5px}.mini-result span,.mini-result small{display:block;color:var(--muted);line-height:1.5}
+pre{
+  white-space:pre-wrap;word-break:break-word;background:#050505;border:1px solid var(--line2);
+  padding:14px;border-radius:14px;max-height:420px;overflow:auto;color:#e5e7eb;
+}
+.report-section{background:#070707;border:1px solid var(--line2);border-radius:14px;padding:14px;margin:12px 0}
+.toast{
+  position:fixed;right:18px;bottom:18px;background:#050505;border:1px solid var(--line);
+  border-left:5px solid var(--blue);border-radius:12px;padding:12px 14px;box-shadow:0 12px 30px rgba(0,0,0,.4);display:none;z-index:99
+}
+.scan-loader{width:72px;height:72px;border-radius:50%;border:3px solid rgba(255,255,255,.12);border-top-color:#fff;margin:0 auto 18px;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.scanning-card{text-align:center;padding:38px!important}
+@media(max-width:950px){.layout{grid-template-columns:1fr}.toolbar{grid-template-columns:1fr}.result-panels{grid-template-columns:1fr}.result-header{flex-direction:column;align-items:flex-start}.actions{width:100%}.actions button,.actions a{flex:1}.scan-actions{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
 <header>
-    <div>
-        <h1>🛡️ Threat Scanner Control Center</h1>
-        <div class="sub">Professional security dashboard with analytics and scan management</div>
+  <div class="nav">
+    <div class="brand">
+      <div class="logo">🛡️</div>
+      <div>
+        <h1>Threat Scanner Control Center</h1>
+        <p>Professional security dashboard with scan, analytics, history, and reports</p>
+      </div>
     </div>
     <div class="actions">
-        <a class="btn ghost" href="index.html">🛡️ New Scan</a>
-        <button onclick="loadData(true)">🔄 Refresh</button>
-        <button class="danger" onclick="logout()">Logout</button>
+      <button class="ghost" onclick="showSection('scan')">🔎 New Scan</button>
+      <button class="ghost" onclick="showSection('history'); loadData(true)">📜 History</button>
+      <button onclick="loadData(true)">🔄 Refresh</button>
+      <button class="danger" onclick="logout()">Logout</button>
     </div>
+  </div>
 </header>
 
 <div class="wrap">
-    <div id="queueBox"></div>
+  <div id="queueBox"></div>
 
-    <div class="toolbar">
-        <input id="searchBox" placeholder="Search target..." oninput="renderHistory()">
-        <select id="riskFilter" onchange="renderHistory()">
+  <main class="layout">
+    <aside class="panel">
+      <h2>🔎 New Security Scan</h2>
+      <p class="muted">Scan only websites or IPs you own or have permission to test.</p>
+
+      <div class="field">
+        <label>Target domain, URL, or IP</label>
+        <input id="target" placeholder="scanme.nmap.org, example.com, https://site.com">
+      </div>
+
+      <div class="field">
+        <label>Scan profile</label>
+        <select id="scan_profile">
+          <option value="quick">⚡ Quick Scan</option>
+          <option value="full" selected>🛡️ Full Scan</option>
+          <option value="deep">🔥 Deep Scan</option>
+        </select>
+      </div>
+
+      <div class="scan-actions">
+        <button class="green" onclick="scan()">Start Scan</button>
+        <button onclick="showSection('history'); loadData(true)">History</button>
+        <button onclick="downloadLastJSON()">JSON</button>
+        <button onclick="downloadLastPDF()">PDF</button>
+      </div>
+
+      <div class="status" id="statusBox">Ready. Enter a target and start scan.</div>
+    </aside>
+
+    <section>
+      <div class="tabs">
+        <button class="tab active" id="tabScan" onclick="showSection('scan')">Scan Result</button>
+        <button class="tab" id="tabHistory" onclick="showSection('history'); loadData(true)">History</button>
+      </div>
+
+      <section id="scanSection" class="section active">
+        <div class="panel out" id="out">
+          <div class="empty">
+            <div>
+              <h2>🛡️ Ready to Scan</h2>
+              <p>Results will appear here with open ports, SSL, DNS, WAF, CVEs, findings, and raw JSON.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="historySection" class="section">
+        <div class="toolbar">
+          <input id="searchBox" placeholder="Search target..." oninput="renderHistory()">
+          <select id="riskFilter" onchange="renderHistory()">
             <option value="ALL">All Risks</option>
             <option value="LOW">LOW</option>
             <option value="MEDIUM">MEDIUM</option>
             <option value="HIGH">HIGH</option>
             <option value="CRITICAL">CRITICAL</option>
             <option value="UNKNOWN">UNKNOWN</option>
-        </select>
-        <select id="sortBox" onchange="renderHistory()">
+          </select>
+          <select id="sortBox" onchange="renderHistory()">
             <option value="newest">Newest First</option>
             <option value="oldest">Oldest First</option>
             <option value="score_high">Highest Score</option>
             <option value="score_low">Lowest Score</option>
-        </select>
-        <button class="green" onclick="exportHistory()">⬇️ Export History</button>
-    </div>
+          </select>
+          <button class="green" onclick="exportHistory()">⬇️ Export</button>
+        </div>
 
-    <div id="historyStats" class="summary"></div>
-    <div id="container" class="grid"></div>
+        <div id="historyStats" class="summary"></div>
+        <div id="container" class="grid"></div>
+      </section>
+    </section>
+  </main>
 </div>
 
 <div id="toast" class="toast"></div>
 
 <script>
-const API = "https://threat-scanner-saas-1.onrender.com";
+const API = "https://threat-scanner-saas-2.onrender.com";
 let historyItems = [];
 let autoRefreshTimer = null;
+let lastReport = null;
 
+function $(id){ return document.getElementById(id); }
 function token(){ return localStorage.getItem("token"); }
-function esc(value){
-    return String(value ?? "")
-        .replaceAll("&","&amp;")
-        .replaceAll("<","&lt;")
-        .replaceAll(">","&gt;")
-        .replaceAll('"',"&quot;")
-        .replaceAll("'","&#039;");
-}
-function riskClass(risk){
-    const r = String(risk || "UNKNOWN").toUpperCase();
-    if(r === "LOW") return "low";
-    if(r === "MEDIUM") return "medium";
-    if(r === "HIGH") return "high";
-    if(r === "CRITICAL") return "critical";
-    return "unknown";
-}
-function showToast(msg){
-    const t = document.getElementById("toast");
-    t.innerHTML = esc(msg);
-    t.style.display = "block";
-    setTimeout(() => t.style.display = "none", 2600);
+function esc(value){ return String(value ?? "").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;"); }
+function setStatus(msg){ $("statusBox").innerHTML = msg; }
+function safeList(items, empty="None"){ if(!items) return empty; if(Array.isArray(items)) return items.length ? items.map(esc).join(", ") : empty; return esc(items); }
+function riskClass(risk){ const r=String(risk||"UNKNOWN").toUpperCase(); if(r==="LOW")return"low"; if(r==="MEDIUM")return"medium"; if(r==="HIGH")return"high"; if(r==="CRITICAL")return"critical"; return"unknown"; }
+function showToast(msg){ const t=$("toast"); t.innerHTML=esc(msg); t.style.display="block"; setTimeout(()=>t.style.display="none",2600); }
+
+function showSection(name){
+  $("scanSection").classList.toggle("active", name==="scan");
+  $("historySection").classList.toggle("active", name==="history");
+  $("tabScan").classList.toggle("active", name==="scan");
+  $("tabHistory").classList.toggle("active", name==="history");
 }
 
-async function apiFetch(path, options = {}){
-    const res = await fetch(API + path, {
-        ...options,
-        headers:{
-            "Content-Type":"application/json",
-            "Authorization":"Bearer " + token(),
-            ...(options.headers || {})
-        }
-    });
-    const data = await res.json().catch(() => ({}));
-    if(res.status === 401){
-        localStorage.removeItem("token");
-        document.getElementById("container").innerHTML = `<div class="card high"><h3>❌ Session expired</h3><p>Please login again from index.html</p></div>`;
+function requireLogin(){
+  if(!token()){
+    $("out").innerHTML = `<div class="result-card"><h2>❌ Not logged in</h2><p>Please login first.</p><button onclick="location.href='index.html'">Go to Login</button></div>`;
+    return false;
+  }
+  return true;
+}
+
+async function apiFetch(path, options={}){
+  const res = await fetch(API + path, {
+    ...options,
+    headers:{
+      "Content-Type":"application/json",
+      "Authorization":"Bearer " + token(),
+      ...(options.headers || {})
     }
-    return {res, data};
+  });
+  const data = await res.json().catch(()=>({}));
+  if(res.status === 401){
+    localStorage.removeItem("token");
+    showToast("Session expired. Login again.");
+  }
+  return {res,data};
+}
+
+async function scan(){
+  if(!requireLogin()) return;
+  const target = $("target").value.trim();
+  const profile = $("scan_profile").value || "full";
+  if(!target){ alert("Enter target"); return; }
+
+  showSection("scan");
+  lastReport = null;
+  setStatus("Scanning target...");
+  $("out").innerHTML = `
+    <div class="result-card scanning-card">
+      <div class="scan-loader"></div>
+      <h2>🔍 Scanning Target...</h2>
+      <p><b>Target:</b> ${esc(target)}</p>
+      <p><b>Profile:</b> ${esc(profile)}</p>
+      <p class="muted">Checking ports, SSL, DNS, headers, WAF, CVEs, and findings.</p>
+    </div>
+  `;
+
+  try{
+    const {res,data} = await apiFetch("/scan", {
+      method:"POST",
+      body:JSON.stringify({target, profile})
+    });
+    if(!res.ok){ setStatus("Scan failed"); renderError(data.detail || "HTTP " + res.status); return; }
+    console.log("SCAN RESULT:", data);
+    setStatus("✅ Scan completed");
+    renderScanResult(data);
+  }catch(err){
+    console.error(err);
+    setStatus("Connection failed");
+    renderError("Cannot connect to backend");
+  }
+}
+
+function renderError(msg){
+  $("out").innerHTML = `<div class="result-card high"><h2>❌ Error</h2><p>${esc(msg)}</p></div>`;
+}
+
+function renderScanResult(data){
+  lastReport = data;
+  const openPorts = Array.isArray(data.open_ports) ? data.open_ports : [];
+  const nmapPorts = Array.isArray(data.nmap_scan?.ports) ? data.nmap_scan.ports : [];
+  const allPorts = openPorts.length ? openPorts : nmapPorts;
+  const findings = Array.isArray(data.findings) ? data.findings : [];
+  const vulns = Array.isArray(data.vulnerability_checks) ? data.vulnerability_checks : [];
+  const cveGroups = Array.isArray(data.cve_results) ? data.cve_results : [];
+  const technologies = Array.isArray(data.technologies) ? data.technologies : [];
+  const subdomains = Array.isArray(data.subdomains) ? data.subdomains : [];
+  const cveCount = cveGroups.reduce((sum,g)=>sum + ((g.cves || []).length),0);
+
+  const portHTML = allPorts.length ? allPorts.map(p=>`
+    <div class="mini-result">
+      <b>Port ${esc(p.port)}</b>
+      <span>${esc(p.service || "Unknown")} · ${esc(p.protocol || "tcp")} · ${esc(p.state || "open")}</span>
+      ${p.banner ? `<small>Banner: ${esc(p.banner)}</small>` : ""}
+      ${p.product || p.version ? `<small>Product: ${esc(p.product || "")} ${esc(p.version || "")}</small>` : ""}
+    </div>`).join("") : "<p class='muted'>No open ports returned</p>";
+
+  const findingHTML = [...findings,...vulns].length ? [...findings,...vulns].map(f=>`
+    <div class="finding ${riskClass(f.severity)}">
+      <h4>${esc(f.title || f.name || "Finding")}</h4>
+      <p><b>Severity:</b> ${esc(f.severity || "INFO")}</p>
+      <p><b>Category:</b> ${esc(f.category || "General")}</p>
+      <p><b>Evidence:</b> ${esc(f.evidence || "N/A")}</p>
+      <p><b>Fix:</b> ${esc(f.fix || "Review manually")}</p>
+    </div>`).join("") : "<p class='muted'>No findings returned</p>";
+
+  const cveHTML = cveGroups.length ? cveGroups.map(group=>`
+    <div class="finding">
+      <h4>🧬 ${esc(group.technology || "Technology")}</h4>
+      ${group.cves && group.cves.length ? group.cves.map(c=>`
+        <div class="mini-result">
+          <b>${esc(c.id || c.cve_id || "CVE")}</b>
+          <span>${esc(c.severity || "UNKNOWN")} · CVSS ${esc(c.score || c.cvss || "N/A")}</span>
+          <small>${esc(c.description || "")}</small>
+          ${c.url ? `<small><a href="${esc(c.url)}" target="_blank">Open reference</a></small>` : ""}
+        </div>`).join("") : "<p class='muted'>No CVEs found</p>"}
+    </div>`).join("") : "<p class='muted'>No CVE results available</p>";
+
+  const subdomainHTML = subdomains.length ? subdomains.map(s=>`
+    <div class="mini-result">
+      <b>${esc(s.subdomain)}</b>
+      <span>Status: ${esc(s.status_code || "N/A")} · HTTPS: ${s.https ? "Yes" : "No"}</span>
+      <small>${esc(s.final_url || "")}</small>
+    </div>`).join("") : "<p class='muted'>No subdomains returned</p>";
+
+  $("out").innerHTML = `
+    <section class="scan-result-shell">
+      <div class="result-header ${riskClass(data.risk)}">
+        <div><h2>🛡️ Scan Result</h2><p>${esc(data.target || data.host || "Unknown target")}</p></div>
+        <div class="risk-pill">${esc(data.risk || "UNKNOWN")}</div>
+      </div>
+
+      <div class="result-grid">
+        <div class="box"><span>Risk</span><h3>${esc(data.risk || "UNKNOWN")}</h3></div>
+        <div class="box"><span>Score</span><h3>${esc(data.score ?? 0)}/100</h3></div>
+        <div class="box"><span>Target Type</span><h3>${esc(data.target_type || "domain")}</h3></div>
+        <div class="box"><span>Open Ports</span><h3>${allPorts.length}</h3></div>
+        <div class="box"><span>CVEs</span><h3>${cveCount}</h3></div>
+        <div class="box"><span>Findings</span><h3>${findings.length + vulns.length}</h3></div>
+      </div>
+
+      <div class="result-panels">
+        <div class="result-card">
+          <h3>🌐 Target Information</h3>
+          <p><b>Target:</b> ${esc(data.target || "-")}</p>
+          <p><b>Host:</b> ${esc(data.host || "-")}</p>
+          <p><b>IP:</b> ${esc(data.ip || "-")}</p>
+          <p><b>Final URL:</b> ${esc(data.final_url || "-")}</p>
+          <p><b>Status:</b> ${esc(data.status_code || "-")}</p>
+        </div>
+
+        <div class="result-card">
+          <h3>🛰️ Nmap Scan</h3>
+          <p><b>Enabled:</b> ${data.nmap_scan?.enabled ? "✅ Yes" : "❌ No"}</p>
+          <p><b>Host:</b> ${esc(data.nmap_scan?.host || data.host || "-")}</p>
+          <p><b>Error:</b> ${esc(data.nmap_scan?.error || "None")}</p>
+        </div>
+
+        <div class="result-card">
+          <h3>🚪 Open Ports</h3>
+          ${portHTML}
+        </div>
+
+        <div class="result-card">
+          <h3>🔒 SSL / TLS</h3>
+          <p><b>Valid:</b> ${data.ssl?.valid ? "✅ Yes" : "❌ No"}</p>
+          <p><b>TLS:</b> ${esc(data.ssl?.tls_version || "-")}</p>
+          <p><b>Cipher:</b> ${esc(data.ssl?.cipher_name || "-")}</p>
+          <p><b>Expires:</b> ${esc(data.ssl?.info || data.ssl?.expires || "-")}</p>
+        </div>
+
+        <div class="result-card">
+          <h3>🌍 DNS Security</h3>
+          <p><b>SPF:</b> ${data.dns_security?.spf ? "✅ Found" : "❌ Missing"}</p>
+          <p><b>DMARC:</b> ${data.dns_security?.dmarc ? "✅ Found" : "❌ Missing"}</p>
+          <p><b>A Records:</b> ${safeList(data.dns_security?.a_records)}</p>
+          <p><b>Issues:</b> ${safeList(data.dns_security?.issues)}</p>
+        </div>
+
+        <div class="result-card">
+          <h3>🛡️ WAF Detection</h3>
+          <p><b>Name:</b> ${esc(data.waf?.name || data.waf || "Unknown")}</p>
+          <p><b>Confidence:</b> ${esc(data.waf?.confidence || "0%")}</p>
+          <p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p>
+        </div>
+
+        <div class="result-card wide">
+          <h3>🧠 Technologies</h3>
+          <p>${safeList(technologies, "Unknown")}</p>
+        </div>
+
+        <div class="result-card wide">
+          <h3>🧬 CVE Results</h3>
+          ${cveHTML}
+        </div>
+
+        <div class="result-card wide">
+          <h3>🌐 Subdomains</h3>
+          ${subdomainHTML}
+        </div>
+
+        <div class="result-card wide">
+          <h3>🚨 Findings</h3>
+          ${findingHTML}
+        </div>
+
+        <div class="result-card wide">
+          <h3>🧾 Raw JSON</h3>
+          <pre>${esc(JSON.stringify(data, null, 2))}</pre>
+        </div>
+      </div>
+    </section>`;
 }
 
 async function loadQueueStatus(){
-    if(!token()) return;
-    const box = document.getElementById("queueBox");
-    const {res, data} = await apiFetch("/queue-status");
-    if(!res.ok){
-        box.innerHTML = `<div class="card high"><h3>⚠️ Queue Status Error</h3><p>${esc(data.detail || "Could not load queue status")}</p></div>`;
-        return;
-    }
-    box.innerHTML = `
-        <div class="summary">
-            <div class="card metric"><h3>📦 Queue Size</h3><p>${esc(data.queue_size)}</p></div>
-            <div class="card metric medium"><h3>⚡ Running</h3><p>${esc(data.running)}</p></div>
-            <div class="card metric"><h3>⏳ Queued</h3><p>${esc(data.queued)}</p></div>
-            <div class="card metric low"><h3>✅ Completed</h3><p>${esc(data.completed)}</p></div>
-            <div class="card metric high"><h3>❌ Failed</h3><p>${esc(data.failed)}</p></div>
-            <div class="card metric unknown"><h3>🛑 Cancelled</h3><p>${esc(data.cancelled ?? 0)}</p></div>
-        </div>`;
+  if(!token()) return;
+  const box = $("queueBox");
+  const {res,data} = await apiFetch("/queue-status");
+  if(!res.ok){ box.innerHTML = ""; return; }
+  box.innerHTML = `
+    <div class="summary">
+      <div class="card metric"><h3>📦 Queue Size</h3><p>${esc(data.queue_size)}</p></div>
+      <div class="card metric medium"><h3>⚡ Running</h3><p>${esc(data.running)}</p></div>
+      <div class="card metric"><h3>⏳ Queued</h3><p>${esc(data.queued)}</p></div>
+      <div class="card metric low"><h3>✅ Completed</h3><p>${esc(data.completed)}</p></div>
+      <div class="card metric high"><h3>❌ Failed</h3><p>${esc(data.failed)}</p></div>
+    </div>`;
 }
 
 async function loadData(manual=false){
-    if(!token()){
-        document.getElementById("container").innerHTML = `<div class="card high"><h3>❌ Not Logged In</h3><p>Please login first from index.html</p></div>`;
-        return;
-    }
-    await loadQueueStatus();
-    const {res, data} = await apiFetch("/history");
-    if(!res.ok){
-        document.getElementById("container").innerHTML = `<div class="card high"><h3>❌ Error</h3><p>${esc(data.detail || "Could not load history")}</p></div>`;
-        return;
-    }
-    historyItems = Array.isArray(data.data) ? data.data : [];
-    renderHistory();
-    if(manual) showToast("Dashboard refreshed");
+  if(!token()){
+    $("container").innerHTML = `<div class="card high"><h3>❌ Not Logged In</h3><p>Please login first.</p></div>`;
+    return;
+  }
+  await loadQueueStatus();
+  const {res,data} = await apiFetch("/history");
+  if(!res.ok){
+    $("container").innerHTML = `<div class="card high"><h3>❌ Error</h3><p>${esc(data.detail || "Could not load history")}</p></div>`;
+    return;
+  }
+  historyItems = Array.isArray(data.data) ? data.data : [];
+  renderHistory();
+  if(manual) showToast("Dashboard refreshed");
 }
 
 function normalizeItem(item){
-    if(Array.isArray(item)){
-        return {id:item[0], target:item[1], risk:item[2], score:item[3], created_at:item[4]};
-    }
-    return item || {};
+  if(Array.isArray(item)) return {id:item[0], target:item[1], risk:item[2], score:item[3], created_at:item[4]};
+  return item || {};
 }
 
 function renderHistory(){
-    const container = document.getElementById("container");
-    const stats = document.getElementById("historyStats");
-    const q = document.getElementById("searchBox").value.toLowerCase().trim();
-    const filter = document.getElementById("riskFilter").value;
-    const sort = document.getElementById("sortBox").value;
+  const container = $("container");
+  const stats = $("historyStats");
+  const q = $("searchBox").value.toLowerCase().trim();
+  const filter = $("riskFilter").value;
+  const sort = $("sortBox").value;
 
-    let items = historyItems.map(normalizeItem);
-    const total = items.length;
-    const high = items.filter(x => ["HIGH","CRITICAL"].includes(String(x.risk).toUpperCase())).length;
-    const med = items.filter(x => String(x.risk).toUpperCase() === "MEDIUM").length;
-    const avg = total ? Math.round(items.reduce((s,x) => s + Number(x.score || 0), 0) / total) : 0;
+  let items = historyItems.map(normalizeItem);
+  const total = items.length;
+  const high = items.filter(x=>["HIGH","CRITICAL"].includes(String(x.risk).toUpperCase())).length;
+  const med = items.filter(x=>String(x.risk).toUpperCase()==="MEDIUM").length;
+  const avg = total ? Math.round(items.reduce((s,x)=>s+Number(x.score||0),0)/total) : 0;
 
-    stats.innerHTML = `
-        <div class="card metric"><h3>🧾 Total Scans</h3><p>${total}</p></div>
-        <div class="card metric high"><h3>🚨 High/Critical</h3><p>${high}</p></div>
-        <div class="card metric medium"><h3>⚠️ Medium</h3><p>${med}</p></div>
-        <div class="card metric"><h3>📈 Average Score</h3><p>${avg}/100</p></div>`;
+  stats.innerHTML = `
+    <div class="card metric"><h3>🧾 Total Scans</h3><p>${total}</p></div>
+    <div class="card metric high"><h3>🚨 High/Critical</h3><p>${high}</p></div>
+    <div class="card metric medium"><h3>⚠️ Medium</h3><p>${med}</p></div>
+    <div class="card metric"><h3>📈 Average Score</h3><p>${avg}/100</p></div>`;
 
-    if(q) items = items.filter(x => String(x.target || "").toLowerCase().includes(q));
-    if(filter !== "ALL") items = items.filter(x => String(x.risk || "UNKNOWN").toUpperCase() === filter);
+  if(q) items = items.filter(x=>String(x.target||"").toLowerCase().includes(q));
+  if(filter !== "ALL") items = items.filter(x=>String(x.risk||"UNKNOWN").toUpperCase()===filter);
 
-    items.sort((a,b) => {
-        if(sort === "oldest") return new Date(a.created_at || 0) - new Date(b.created_at || 0);
-        if(sort === "score_high") return Number(b.score || 0) - Number(a.score || 0);
-        if(sort === "score_low") return Number(a.score || 0) - Number(b.score || 0);
-        return new Date(b.created_at || 0) - new Date(a.created_at || 0);
-    });
+  items.sort((a,b)=>{
+    if(sort==="oldest") return new Date(a.created_at||0)-new Date(b.created_at||0);
+    if(sort==="score_high") return Number(b.score||0)-Number(a.score||0);
+    if(sort==="score_low") return Number(a.score||0)-Number(b.score||0);
+    return new Date(b.created_at||0)-new Date(a.created_at||0);
+  });
 
-    if(items.length === 0){
-        container.innerHTML = `<div class="card"><h3>📭 No Scan History</h3><p>No scans match your current filters.</p></div>`;
-        return;
-    }
+  if(!items.length){ container.innerHTML = `<div class="card"><h3>📭 No Scan History</h3><p>No scans match your filters.</p></div>`; return; }
 
-    container.innerHTML = items.map(item => {
-        const r = String(item.risk || "UNKNOWN").toUpperCase();
-        return `
-        <div class="card ${riskClass(r)}">
-            <div class="scan-title">
-                <h3>🌐 ${esc(item.target || "Unknown target")}</h3>
-                <span class="badge ${esc(r)}">${esc(r)}</span>
-            </div>
-            <p><b>Score:</b> ${esc(item.score ?? "N/A")}/100</p>
-            <p><b>Date:</b> <span class="muted">${esc(item.created_at || "Unknown")}</span></p>
-            <div class="row">
-                <button onclick="viewReport(${Number(item.id)})">View Report</button>
-                <button class="ghost" onclick="downloadSingleReport(${Number(item.id)})">JSON</button>
-                <button class="danger" onclick="deleteHistory(${Number(item.id)})">Delete</button>
-            </div>
-        </div>`;
-    }).join("");
+  container.innerHTML = items.map(item=>{
+    const r=String(item.risk||"UNKNOWN").toUpperCase();
+    return `
+      <div class="card ${riskClass(r)}">
+        <div class="scan-title"><h3>🌐 ${esc(item.target || "Unknown target")}</h3><span class="badge ${esc(r)}">${esc(r)}</span></div>
+        <p><b>Score:</b> ${esc(item.score ?? "N/A")}/100</p>
+        <p><b>Date:</b> <span class="muted">${esc(item.created_at || "Unknown")}</span></p>
+        <div class="row">
+          <button onclick="viewReport(${Number(item.id)})">View Report</button>
+          <button onclick="downloadSingleReport(${Number(item.id)})">JSON</button>
+          <button class="danger" onclick="deleteHistory(${Number(item.id)})">Delete</button>
+        </div>
+      </div>`;
+  }).join("");
 }
 
 function renderReportHTML(report){
-    const vulns = report.vulnerability_checks || [];
-    const findings = report.findings || [];
-    const subdomains = report.subdomains || report.structured?.scan_subdomains || [];
-    const cvesRaw = report.cve_results || [];
-    const structuredCves = report.structured?.scan_cves || [];
-    const ports = report.open_ports || report.structured?.scan_ports || [];
+  const ports = report.open_ports || report.structured?.scan_ports || [];
+  const vulns = report.vulnerability_checks || [];
+  const findings = report.findings || [];
+  const subdomains = report.subdomains || report.structured?.scan_subdomains || [];
+  const cvesRaw = report.cve_results || [];
+  const tls = report.ssl || {};
+  const cveCount = cvesRaw.reduce((s,g)=>s + ((g.cves || []).length),0);
 
-    const cveCount = cvesRaw.reduce((s,g) => s + ((g.cves || []).length), 0) + structuredCves.length;
-    const tls = report.ssl || {};
+  const findingsHTML = (vulns.length || findings.length)
+    ? [...vulns,...findings].map(f=>`<div class="finding ${riskClass(f.severity)}"><h4>🕳️ ${esc(f.name || f.title || "Finding")}</h4><p><b>Severity:</b> ${esc(f.severity || "UNKNOWN")}</p><p><b>Evidence:</b> ${esc(f.evidence || "-")}</p><p><b>Fix:</b> ${esc(f.fix || "-")}</p></div>`).join("")
+    : `<p>✅ No findings stored.</p>`;
 
-    const findingsHTML = (vulns.length || findings.length)
-        ? [...vulns, ...findings].map(f => `<div class="finding ${riskClass(f.severity)}"><h4>🕳️ ${esc(f.name || f.title || "Finding")}</h4><p><b>Severity:</b> ${esc(f.severity || "UNKNOWN")}</p><p><b>Evidence:</b> ${esc(f.evidence || "-")}</p><p><b>Fix:</b> ${esc(f.fix || "-")}</p></div>`).join("")
-        : `<p>✅ No findings stored for this report.</p>`;
+  const portHTML = ports.length ? ports.map(p=>`<div class="finding ${p.risk === "RISKY" ? "medium" : ""}"><p><b>Port:</b> ${esc(p.port)}</p><p><b>Service:</b> ${esc(p.service || "Unknown")}</p><p><b>Risk:</b> ${esc(p.risk || "NORMAL")}</p></div>`).join("") : `<p>No open ports stored.</p>`;
 
-    const subHTML = subdomains.length
-        ? subdomains.map(s => `<div class="finding"><p><b>Subdomain:</b> ${esc(s.subdomain)}</p><p><b>IPs:</b> ${esc(Array.isArray(s.ips) ? s.ips.join(", ") : s.ips)}</p><p><b>HTTPS:</b> ${s.https ? "✅ Yes" : "❌ No"}</p><p><b>Status:</b> ${esc(s.status_code || "Unknown")}</p><p><b>Final URL:</b> ${esc(s.final_url || "N/A")}</p></div>`).join("")
-        : `<p>No subdomains stored.</p>`;
-
-    let cveHTML = "";
-    if(cvesRaw.length){
-        cveHTML += cvesRaw.map(group => `<div class="finding"><h4>🧩 ${esc(group.technology || "Technology")}</h4>${(group.cves || []).map(c => `<div class="finding ${riskClass(c.severity)}"><p><b>${esc(c.id || c.cve_id)}</b></p><p><b>Severity:</b> ${esc(c.severity || "UNKNOWN")}</p><p><b>Score:</b> ${esc(c.score || "N/A")}</p><p>${esc(c.description || "")}</p>${c.url ? `<a href="${esc(c.url)}" target="_blank">Open reference</a>` : ""}</div>`).join("") || "<p>No CVEs found.</p>"}</div>`).join("");
-    }
-    if(structuredCves.length){
-        cveHTML += structuredCves.map(c => `<div class="finding ${riskClass(c.severity)}"><p><b>${esc(c.cve_id)}</b> — ${esc(c.technology)}</p><p><b>Severity:</b> ${esc(c.severity || "UNKNOWN")} | <b>Score:</b> ${esc(c.score || "N/A")}</p><p>${esc(c.description || "")}</p>${c.url ? `<a href="${esc(c.url)}" target="_blank">Open reference</a>` : ""}</div>`).join("");
-    }
-    if(!cveHTML) cveHTML = `<p>No CVE results stored.</p>`;
-
-    const portHTML = ports.length ? ports.map(p => `<div class="finding ${p.risk === "RISKY" ? "medium" : ""}"><p><b>Port:</b> ${esc(p.port)}</p><p><b>Service:</b> ${esc(p.service || "Unknown")}</p><p><b>Risk:</b> ${esc(p.risk || "NORMAL")}</p><p><b>Banner:</b> ${esc(p.banner || "-")}</p></div>`).join("") : `<p>No open ports stored.</p>`;
-
-    return `
-        <h1>🛡️ Scan Report</h1>
-        <div class="report-section ${riskClass(report.risk)}">
-            <div class="mini-grid">
-                <div class="mini"><b>Target</b>${esc(report.target)}</div>
-                <div class="mini"><b>Risk</b>${esc(report.risk)}</div>
-                <div class="mini"><b>Score</b>${esc(report.score)}/100</div>
-                <div class="mini"><b>Profile</b>${esc(report.profile || "full")}</div>
-                <div class="mini"><b>CVEs</b>${cveCount}</div>
-                <div class="mini"><b>Subdomains</b>${subdomains.length}</div>
-            </div>
-        </div>
-        <div class="report-section"><h2>🔒 SSL / TLS</h2><p><b>Valid:</b> ${tls.valid ? "✅ Yes" : "❌ No"}</p><p><b>TLS Version:</b> ${esc(tls.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(tls.cipher_name || "Unknown")} / ${esc(tls.cipher_bits || "Unknown")} bits</p><p><b>Expiration:</b> ${esc(tls.info || "Unknown")}</p></div>
-        <div class="report-section"><h2>🕳️ Findings & Vulnerabilities</h2>${findingsHTML}</div>
-        <div class="report-section"><h2>🧬 CVE Results</h2>${cveHTML}</div>
-        <div class="report-section"><h2>🌍 Subdomains</h2>${subHTML}</div>
-        <div class="report-section"><h2>🚪 Open Ports</h2>${portHTML}</div>
-        <div class="report-section"><h2>📦 Full JSON</h2><pre>${esc(JSON.stringify(report, null, 2))}</pre></div>`;
+  return `
+    <h1>🛡️ Scan Report</h1>
+    <div class="report-section ${riskClass(report.risk)}">
+      <div class="mini-grid">
+        <div class="mini"><b>Target</b>${esc(report.target)}</div>
+        <div class="mini"><b>Risk</b>${esc(report.risk)}</div>
+        <div class="mini"><b>Score</b>${esc(report.score)}/100</div>
+        <div class="mini"><b>CVEs</b>${cveCount}</div>
+        <div class="mini"><b>Subdomains</b>${subdomains.length}</div>
+        <div class="mini"><b>Ports</b>${ports.length}</div>
+      </div>
+    </div>
+    <div class="report-section"><h2>🔒 SSL / TLS</h2><p><b>Valid:</b> ${tls.valid ? "✅ Yes" : "❌ No"}</p><p><b>TLS:</b> ${esc(tls.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(tls.cipher_name || "Unknown")}</p></div>
+    <div class="report-section"><h2>🚪 Open Ports</h2>${portHTML}</div>
+    <div class="report-section"><h2>🕳️ Findings</h2>${findingsHTML}</div>
+    <div class="report-section"><h2>📦 Full JSON</h2><pre>${esc(JSON.stringify(report, null, 2))}</pre></div>`;
 }
 
 async function viewReport(id){
-    const {res, data:report} = await apiFetch("/history/" + id);
-    if(!res.ok){ alert(report.detail || "Could not load report"); return; }
-    const win = window.open("", "_blank");
-    win.document.write(`<!DOCTYPE html><html><head><title>Scan Report</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>${document.querySelector("style").innerHTML} body{padding:24px}.wrap{padding:0}</style></head><body><div class="wrap">${renderReportHTML(report)}<div class="row"><button onclick="window.print()">Download / Print PDF</button></div></div></body></html>`);
-    win.document.close();
+  const {res,data:report} = await apiFetch("/history/" + id);
+  if(!res.ok){ alert(report.detail || "Could not load report"); return; }
+  const win = window.open("", "_blank");
+  win.document.write(`<!DOCTYPE html><html><head><title>Scan Report</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>${document.querySelector("style").innerHTML} body{padding:24px}.wrap{padding:0}</style></head><body><div class="wrap">${renderReportHTML(report)}<div class="row"><button onclick="window.print()">Download / Print PDF</button></div></div></body></html>`);
+  win.document.close();
 }
 
 async function downloadSingleReport(id){
-    const {res, data} = await apiFetch("/history/" + id);
-    if(!res.ok){ alert(data.detail || "Could not load report"); return; }
-    downloadJSON(data, `scan-report-${data.host || data.target || id}.json`);
+  const {res,data} = await apiFetch("/history/" + id);
+  if(!res.ok){ alert(data.detail || "Could not load report"); return; }
+  downloadJSON(data, `scan-report-${data.host || data.target || id}.json`);
 }
 
+function downloadLastJSON(){ if(!lastReport){ alert("No scan report yet"); return; } downloadJSON(lastReport, `scan-report-${lastReport.host || lastReport.target || "target"}.json`); }
+function downloadLastPDF(){ if(!lastReport){ alert("No scan report yet"); return; } const win=window.open("","_blank"); win.document.write(`<!DOCTYPE html><html><head><title>PDF Report</title><style>${document.querySelector("style").innerHTML} body{padding:24px}</style></head><body>${renderReportHTML(lastReport)}<script>window.print();<\/script></body></html>`); win.document.close(); }
 function exportHistory(){ downloadJSON(historyItems.map(normalizeItem), "scan-history.json"); }
-function downloadJSON(data, filename){
-    const blob = new Blob([JSON.stringify(data, null, 2)], {type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = filename.replace(/[^a-z0-9_.-]/gi, "-").toLowerCase();
-    a.click();
-    URL.revokeObjectURL(url);
-}
+function downloadJSON(data, filename){ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename.replace(/[^a-z0-9_.-]/gi,"-").toLowerCase(); a.click(); URL.revokeObjectURL(url); }
 
 async function deleteHistory(id){
-    if(!confirm("Delete this scan from history?")) return;
-    const {res, data} = await apiFetch("/history/" + id, {method:"DELETE"});
-    if(!res.ok){ alert(data.detail || "Could not delete scan"); return; }
-    historyItems = historyItems.map(normalizeItem).filter(x => Number(x.id) !== Number(id));
-    renderHistory();
-    showToast("Scan deleted");
+  if(!confirm("Delete this scan from history?")) return;
+  const {res,data} = await apiFetch("/history/" + id, {method:"DELETE"});
+  if(!res.ok){ alert(data.detail || "Could not delete scan"); return; }
+  historyItems = historyItems.map(normalizeItem).filter(x=>Number(x.id)!==Number(id));
+  renderHistory();
+  showToast("Scan deleted");
 }
 
-function logout(){
-    localStorage.removeItem("token");
-    window.location.href = "index.html";
-}
+function logout(){ localStorage.removeItem("token"); window.location.href="index.html"; }
 
-loadData();
-autoRefreshTimer = setInterval(() => loadData(false), 10000);
+if(!token()) requireLogin();
+loadData(false);
+autoRefreshTimer = setInterval(()=>{ if($("historySection").classList.contains("active")) loadData(false); }, 15000);
 </script>
 </body>
 </html>
