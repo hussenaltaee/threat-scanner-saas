@@ -518,6 +518,7 @@ input#t{
   .history-row{grid-template-columns:1fr}.nav-actions{width:100%}.nav-actions .btn,.badge{flex:1;justify-content:center}
 }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
 <div class="topbar">
@@ -766,7 +767,7 @@ async function scan(){
     console.log("SCAN RESULT:", data);
 
     if(typeof showResult === "function"){
-      showResult(data); updateDashboard(data);
+      showResult(data); updateCharts(data); updateDashboard(data);
     }else{
       $("out").innerHTML = `
         <div class="card INFO">
@@ -1061,7 +1062,8 @@ async function captureScreenshot(){
 }
 function downloadScreenshot(dataUrl, target){ const a=document.createElement("a"); const safeName=(target || "target").replace(/[^a-z0-9]/gi,"-").toLowerCase(); a.href=dataUrl; a.download=`screenshot-${safeName}.png`; a.click(); }
 function downloadReport(){ if(!lastReport){ setStatus("❌ No report to download"); return; } const blob=new Blob([JSON.stringify(lastReport,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=`scan-report-${lastReport.host || "target"}.json`; a.click(); URL.revokeObjectURL(url); }
-function downloadPDF(){ if(!lastReport){ setStatus("❌ No report to export"); return; } const win=window.open("","_blank"); win.document.write(`<html><head><title>Threat Scanner PDF Report</title><style>body{font-family:Arial;padding:30px;color:#111827}.box{border:1px solid #ccc;padding:15px;margin:12px 0;border-radius:8px}</style></head><body><h1>🛡️ Threat Scanner Report</h1><div class="box"><p><b>Target:</b> ${esc(lastReport.target)}</p><p><b>Host:</b> ${esc(lastReport.host)}</p><p><b>Profile:</b> ${esc(lastReport.profile || "full")}</p><p><b>Risk:</b> ${esc(lastReport.risk)}</p><p><b>Score:</b> ${esc(lastReport.score)}/100</p><p><b>Total Vulnerabilities:</b> ${lastReport.vulnerability_checks?.length || 0}</p><p><b>TLS Version:</b> ${esc(lastReport.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(lastReport.ssl?.cipher_name || "Unknown")}</p></div><script>window.print();<\/script>
+function downloadPDF(){ if(!lastReport){ setStatus("❌ No report to export"); return; } const win=window.open("","_blank"); win.document.write(`<html><head><title>Threat Scanner PDF Report</title><style>body{font-family:Arial;padding:30px;color:#111827}.box{border:1px solid #ccc;padding:15px;margin:12px 0;border-radius:8px}</style><script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head><body><h1>🛡️ Threat Scanner Report</h1><div class="box"><p><b>Target:</b> ${esc(lastReport.target)}</p><p><b>Host:</b> ${esc(lastReport.host)}</p><p><b>Profile:</b> ${esc(lastReport.profile || "full")}</p><p><b>Risk:</b> ${esc(lastReport.risk)}</p><p><b>Score:</b> ${esc(lastReport.score)}/100</p><p><b>Total Vulnerabilities:</b> ${lastReport.vulnerability_checks?.length || 0}</p><p><b>TLS Version:</b> ${esc(lastReport.ssl?.tls_version || "Unknown")}</p><p><b>Cipher:</b> ${esc(lastReport.ssl?.cipher_name || "Unknown")}</p></div><script>window.print();<\/script>
 <div class="card">
 <h3>📊 Dashboard Analytics</h3>
 <div class="summary-grid">
@@ -1071,6 +1073,58 @@ function downloadPDF(){ if(!lastReport){ setStatus("❌ No report to export"); r
 <div class="summary-box"><h3>Risk</h3><p id="chartRisk">LOW</p></div>
 </div>
 </div>
+
+
+<script>
+function updateCharts(data){
+    try{
+        document.getElementById("portsBox").innerText =
+            (data.open_ports || []).length;
+
+        document.getElementById("cvesBox").innerText =
+            (data.cve_results || []).length;
+
+        document.getElementById("riskBox").innerText =
+            data.risk || "LOW";
+
+        document.getElementById("cvssBox").innerText =
+            data.cvss_score || "0.0";
+
+        const sev = {LOW:0,MEDIUM:0,HIGH:0,CRITICAL:0};
+
+        (data.findings || []).forEach(f=>{
+            const s = (f.severity || "LOW").toUpperCase();
+            if(sev[s] !== undefined){
+                sev[s]++;
+            }
+        });
+
+        const ctx = document.getElementById("severityChart");
+
+        if(window.severityChartObj){
+            window.severityChartObj.destroy();
+        }
+
+        window.severityChartObj = new Chart(ctx,{
+            type:'bar',
+            data:{
+                labels:['LOW','MEDIUM','HIGH','CRITICAL'],
+                datasets:[{
+                    label:'Findings',
+                    data:[sev.LOW,sev.MEDIUM,sev.HIGH,sev.CRITICAL]
+                }]
+            }
+        });
+
+    }catch(err){
+        console.log(err);
+    }
+}
+
+function exportPDF(){
+    window.print();
+}
+</script>
 
 </body></html>`); win.document.close(); }
 
@@ -1127,6 +1181,58 @@ function logout(){
 <div class="summary-box"><h3>Risk</h3><p id="chartRisk">LOW</p></div>
 </div>
 </div>
+
+
+<script>
+function updateCharts(data){
+    try{
+        document.getElementById("portsBox").innerText =
+            (data.open_ports || []).length;
+
+        document.getElementById("cvesBox").innerText =
+            (data.cve_results || []).length;
+
+        document.getElementById("riskBox").innerText =
+            data.risk || "LOW";
+
+        document.getElementById("cvssBox").innerText =
+            data.cvss_score || "0.0";
+
+        const sev = {LOW:0,MEDIUM:0,HIGH:0,CRITICAL:0};
+
+        (data.findings || []).forEach(f=>{
+            const s = (f.severity || "LOW").toUpperCase();
+            if(sev[s] !== undefined){
+                sev[s]++;
+            }
+        });
+
+        const ctx = document.getElementById("severityChart");
+
+        if(window.severityChartObj){
+            window.severityChartObj.destroy();
+        }
+
+        window.severityChartObj = new Chart(ctx,{
+            type:'bar',
+            data:{
+                labels:['LOW','MEDIUM','HIGH','CRITICAL'],
+                datasets:[{
+                    label:'Findings',
+                    data:[sev.LOW,sev.MEDIUM,sev.HIGH,sev.CRITICAL]
+                }]
+            }
+        });
+
+    }catch(err){
+        console.log(err);
+    }
+}
+
+function exportPDF(){
+    window.print();
+}
+</script>
 
 </body>
 </html>

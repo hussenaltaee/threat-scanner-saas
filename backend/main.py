@@ -801,3 +801,14 @@ def analytics():
         "message":"Dashboard analytics enabled"
     }
 
+
+
+@app.get("/dashboard-stats")
+def dashboard_stats():
+    return {
+        "status":"ok",
+        "charts":True,
+        "analytics":True,
+        "pdf_reports":True
+    }
+

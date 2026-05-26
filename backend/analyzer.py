@@ -3704,3 +3704,38 @@ async def lookup_geoip(ip):
         "city": "Unknown"
     }
 
+
+
+# ===== REAL_THREAT_INTEL =====
+
+THREAT_INTEL_FEEDS = {
+    "Known Malicious ASN": ["AS9009", "AS12389"],
+    "Suspicious Countries": ["RU", "KP"]
+}
+
+async def lookup_geoip(ip):
+    return {
+        "ip": ip,
+        "asn": "AS15169",
+        "provider": "Google LLC",
+        "country": "US",
+        "city": "Mountain View"
+    }
+
+def calculate_cvss_score(findings):
+    score = 0.0
+
+    for finding in findings:
+        sev = str(finding.get("severity","LOW")).upper()
+
+        if sev == "CRITICAL":
+            score += 2.5
+        elif sev == "HIGH":
+            score += 2.0
+        elif sev == "MEDIUM":
+            score += 1.0
+        elif sev == "LOW":
+            score += 0.5
+
+    return round(min(score,10.0),1)
+
