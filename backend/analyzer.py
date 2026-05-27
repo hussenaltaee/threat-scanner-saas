@@ -6,7 +6,7 @@ import dns.resolver
 import re
 import ipaddress
 import nmap
-from urllib.parse import urlparse, urljoin
+from urllib.parse import urlparse, urljoin, parse_qs, urlencode, urlunparse
 
 
 COMMON_PORTS = [21, 22, 25, 53, 80, 110, 143, 443, 8080, 8443]
@@ -2269,7 +2269,9 @@ def separate_results(findings, vulnerability_checks):
         "ip intelligence",
         "ports",
         "robots",
-        "cve"
+        "cve",
+        "wayback",
+        "kxss"
     ]
 
     for item in combined:
@@ -2648,6 +2650,242 @@ def build_enterprise_summary(sections):
         ]),
         "note": "Confirmed vulnerabilities are separated from possible issues, hardening, attack surface, and informational findings."
     }
+
+
+
+
+# ============================================================
+# Wayback URLs + KXSS-like Reflection Engine
+# Defensive/passive discovery for authorized testing only.
+# ============================================================
+WAYBACK_LIMIT = 80
+KXSS_TEST_PAYLOAD = "kxss_reflect_12345"
+
+
+def normalize_wayback_url(raw_url, host):
+    try:
+        parsed = urlparse(str(raw_url).strip())
+        if not parsed.scheme or not parsed.netloc:
+            return None
+
+        target_host = (host or "").lower().replace("www.", "", 1)
+        parsed_host = (parsed.hostname or "").lower().replace("www.", "", 1)
+
+        if parsed_host != target_host and not parsed_host.endswith("." + target_host):
+            return None
+
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path or "/", "", parsed.query, ""))
+    except Exception:
+        return None
+
+
+def classify_wayback_url(url):
+    u = str(url or "").lower()
+    severity = "INFO"
+    status = "INFO"
+    confidence = "LOW"
+    url_type = "archived_url"
+
+    if "?" in u and "=" in u:
+        url_type = "parameterized_url"
+        confidence = "MEDIUM"
+
+    if any(x in u for x in ["/api/", "/v1/", "/v2/", "/graphql", "/admin", "/login", "/debug", "/swagger", "/openapi"]):
+        url_type = "interesting_endpoint"
+        confidence = "MEDIUM"
+
+    if any(u.endswith(x) for x in [".js", ".json", ".xml", ".sql", ".zip", ".bak", ".old", ".backup"]):
+        url_type = "interesting_file"
+        confidence = "MEDIUM"
+
+    high_patterns = [".env", ".git", "backup", ".sql", "database", "dump", "config", "secret", "debug", "openapi.json"]
+    medium_patterns = ["admin", "swagger", "graphql", "token", "auth", "login", "api"]
+
+    if any(p in u for p in high_patterns):
+        severity = "MEDIUM"
+        status = "POSSIBLE"
+        confidence = "MEDIUM"
+    elif any(p in u for p in medium_patterns):
+        severity = "LOW"
+        status = "INFO"
+        confidence = "MEDIUM"
+
+    return {
+        "type": url_type,
+        "severity": severity,
+        "status": status,
+        "confidence": confidence
+    }
+
+
+async def fetch_wayback_urls(client, host):
+    result = {
+        "enabled": True,
+        "source": "web.archive.org CDX API",
+        "host": host,
+        "total": 0,
+        "urls": [],
+        "parameterized_urls": [],
+        "interesting_urls": [],
+        "error": None
+    }
+
+    if not host or is_ip_address(host):
+        result["enabled"] = False
+        result["error"] = "Wayback discovery works best with domain targets, not raw IPs."
+        return result
+
+    try:
+        res = await client.get(
+            "https://web.archive.org/cdx",
+            params={
+                "url": f"{host}/*",
+                "output": "json",
+                "fl": "original",
+                "collapse": "urlkey",
+                "filter": "statuscode:200",
+                "limit": str(WAYBACK_LIMIT)
+            },
+            timeout=12
+        )
+
+        if res.status_code != 200:
+            result["error"] = f"Wayback API HTTP {res.status_code}"
+            return result
+
+        data = res.json()
+        rows = data[1:] if isinstance(data, list) and len(data) > 1 else []
+
+        urls = []
+        for row in rows:
+            raw = row[0] if isinstance(row, list) and row else row
+            clean = normalize_wayback_url(raw, host)
+            if clean and clean not in urls:
+                urls.append(clean)
+
+        urls = urls[:WAYBACK_LIMIT]
+        result["urls"] = urls
+        result["total"] = len(urls)
+        result["parameterized_urls"] = [u for u in urls if "?" in u and "=" in u][:40]
+
+        interesting = []
+        for u in urls:
+            meta = classify_wayback_url(u)
+            if meta["type"] != "archived_url" or meta["severity"] != "INFO":
+                interesting.append({
+                    "url": u,
+                    "type": meta["type"],
+                    "severity": meta["severity"],
+                    "status": meta["status"],
+                    "confidence": meta["confidence"]
+                })
+
+        result["interesting_urls"] = interesting[:40]
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+
+def inject_param(url, param_name, payload):
+    try:
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query, keep_blank_values=True)
+        qs[param_name] = [payload]
+        new_query = urlencode(qs, doseq=True)
+        return urlunparse((parsed.scheme, parsed.netloc, parsed.path, parsed.params, new_query, parsed.fragment))
+    except Exception:
+        return None
+
+
+def reflected_context_light(body, payload):
+    body = str(body or "")
+    payload = str(payload or "")
+
+    if payload not in body:
+        return None
+
+    index = body.find(payload)
+    start = max(0, index - 120)
+    end = min(len(body), index + len(payload) + 120)
+    ctx = body[start:end].lower()
+
+    if "<script" in ctx:
+        return "script_context"
+    if "href=" in ctx or "src=" in ctx or "value=" in ctx or "data-" in ctx:
+        return "attribute_context"
+    if "<" in ctx and ">" in ctx:
+        return "html_context"
+    return "text_context"
+
+
+async def run_kxss_like_checks(client, urls):
+    results = []
+    candidates = []
+
+    for u in urls or []:
+        try:
+            parsed = urlparse(u)
+            qs = parse_qs(parsed.query, keep_blank_values=True)
+            if parsed.scheme in ["http", "https"] and parsed.netloc and qs:
+                candidates.append((u, list(qs.keys())[:4]))
+        except Exception:
+            continue
+
+    candidates = candidates[:25]
+    tasks = []
+    meta = []
+
+    for url, params in candidates:
+        for param in params:
+            test_url = inject_param(url, param, KXSS_TEST_PAYLOAD)
+            if test_url:
+                tasks.append(safe_get(client, test_url))
+                meta.append((url, test_url, param))
+
+    if not tasks:
+        return results
+
+    responses = await asyncio.gather(*tasks)
+
+    for (original_url, test_url, param), res in zip(meta, responses):
+        if not res:
+            continue
+
+        context = reflected_context_light(res.text, KXSS_TEST_PAYLOAD)
+
+        if not context:
+            continue
+
+        severity = "LOW"
+        status = "INFO"
+        confidence = "LOW"
+
+        if context in ["attribute_context", "html_context", "script_context"]:
+            severity = "MEDIUM"
+            status = "POSSIBLE"
+            confidence = "MEDIUM"
+
+        results.append({
+            "type": "KXSS-like Reflected Parameter",
+            "name": "KXSS-like Reflected Parameter",
+            "severity": severity,
+            "status": status,
+            "confidence": confidence,
+            "category": "KXSS / Reflected Input",
+            "parameter": param,
+            "original_url": original_url,
+            "affected_url": test_url,
+            "fix_location": f"Query parameter: {param}",
+            "evidence_type": context,
+            "evidence": f"Harmless marker reflected in {context} for parameter '{param}'.",
+            "impact": "Reflected input may become exploitable XSS if output is not contextually encoded.",
+            "description": "A URL parameter reflected the test marker. Manual review is required to confirm exploitability.",
+            "fix": "Apply context-aware output encoding, validate input, and enforce a strong Content-Security-Policy."
+        })
+
+    return dedupe_dicts(results, ["affected_url", "parameter", "evidence_type"])
 
 
 async def analyze(target, profile="full"):
@@ -3741,6 +3979,8 @@ async def analyze(target, profile="full"):
         "technologies": technologies,
         "cve_results": cve_results,
         "waf": waf,
+            "wayback": wayback,
+            "kxss_results": kxss_results,
         "http_methods": http_methods,
         "js_secrets": js_secrets,
         "api_endpoints": api_endpoints,
