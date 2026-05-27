@@ -2498,6 +2498,158 @@ async def run_nmap_scan(host):
     return nmap_result
 
 
+
+# ============================================================
+# Enterprise Sections: Confirmed / Possible / Informational
+# ============================================================
+def cvss_from_severity(severity):
+    sev = str(severity or "INFO").upper()
+    return {"CRITICAL": 9.8, "HIGH": 8.1, "MEDIUM": 5.6, "LOW": 3.1, "INFO": 0.0}.get(sev, 0.0)
+
+
+def exploitability_from_item(item):
+    sev = str(item.get("severity", "INFO")).upper()
+    conf = str(item.get("confidence", "MEDIUM")).upper()
+    evidence_type = str(item.get("evidence_type", "generic")).lower()
+    strong = {
+        "database_error_pattern", "graphql_introspection", "public_schema",
+        "public_file", "private_key_exposed", "real_secret_exposed",
+        "confirmed_exposure", "keyword_status_match"
+    }
+    if evidence_type in strong and conf == "HIGH":
+        return "HIGH"
+    if sev in ["CRITICAL", "HIGH"] and conf in ["HIGH", "MEDIUM"]:
+        return "MEDIUM"
+    if sev == "MEDIUM" and conf in ["HIGH", "MEDIUM"]:
+        return "MEDIUM"
+    return "LOW"
+
+
+def normalize_enterprise_status(item):
+    status = str(item.get("status") or "").upper()
+    if status in ["CONFIRMED", "POSSIBLE", "INFO", "HARDENING", "PROTECTED"]:
+        return status
+
+    sev = str(item.get("severity", "INFO")).upper()
+    conf = str(item.get("confidence", "MEDIUM")).upper()
+    category = str(item.get("category", "")).lower()
+    title = str(item.get("title") or item.get("name") or item.get("type") or "").lower()
+    evidence_type = str(item.get("evidence_type", "generic")).lower()
+
+    confirmed_evidence = {
+        "database_error_pattern", "graphql_introspection", "public_schema",
+        "public_file", "private_key_exposed", "real_secret_exposed",
+        "confirmed_exposure"
+    }
+
+    if evidence_type in confirmed_evidence and sev in ["HIGH", "CRITICAL"] and conf == "HIGH":
+        return "CONFIRMED"
+
+    if any(x in category for x in ["headers", "cookies", "dns", "ssl/tls", "security policy"]) or "missing security header" in title:
+        return "HARDENING"
+
+    if any(x in category for x in ["attack surface", "api documentation", "admin/auth", "graphql", "subdomains", "robots", "ports"]):
+        return "INFO"
+
+    if sev in ["CRITICAL", "HIGH", "MEDIUM"]:
+        return "POSSIBLE"
+
+    return "INFO"
+
+
+def enrich_enterprise_item(item):
+    item = dict(item or {})
+    item["title"] = item.get("title") or item.get("name") or item.get("type") or "Finding"
+    item["description"] = item.get("description") or item.get("impact") or ""
+    item["severity"] = str(item.get("severity", "INFO")).upper()
+    item["confidence"] = str(item.get("confidence", "MEDIUM")).upper()
+    item["status"] = normalize_enterprise_status(item)
+    item["cvss"] = item.get("cvss") or item.get("cvss_score") or cvss_from_severity(item.get("severity"))
+    item["exploitability"] = item.get("exploitability") or exploitability_from_item(item)
+    item["affected_url"] = item.get("affected_url") or item.get("url")
+    item["fix_location"] = item.get("fix_location") or item.get("path") or item.get("endpoint")
+    item["evidence_type"] = item.get("evidence_type", "generic")
+    return item
+
+
+def build_enterprise_sections(findings, vulnerability_checks):
+    confirmed = []
+    possible = []
+    hardening = []
+    attack_surface = []
+    informational = []
+
+    combined = []
+    for item in vulnerability_checks or []:
+        combined.append(enrich_enterprise_item(item))
+    for item in findings or []:
+        combined.append(enrich_enterprise_item(item))
+
+    combined = dedupe_dicts(combined, ["title", "severity", "evidence", "affected_url"])
+
+    for item in combined:
+        status = str(item.get("status", "INFO")).upper()
+        category = str(item.get("category", "")).lower()
+
+        if status == "CONFIRMED":
+            confirmed.append(item)
+        elif status == "POSSIBLE":
+            possible.append(item)
+        elif status == "HARDENING":
+            hardening.append(item)
+        elif any(x in category for x in ["attack surface", "api", "graphql", "subdomain", "robots", "ports"]):
+            attack_surface.append(item)
+        else:
+            informational.append(item)
+
+    return {
+        "confirmed_vulnerabilities": confirmed,
+        "possible_issues": possible,
+        "hardening_issues": hardening,
+        "attack_surface": attack_surface,
+        "informational_findings": informational
+    }
+
+
+def calculate_enterprise_score(sections):
+    score = 0
+    confirmed_weights = {"CRITICAL": 45, "HIGH": 30, "MEDIUM": 12, "LOW": 3, "INFO": 0}
+    possible_weights = {"CRITICAL": 8, "HIGH": 5, "MEDIUM": 2, "LOW": 0, "INFO": 0}
+
+    for item in sections.get("confirmed_vulnerabilities", []):
+        score += confirmed_weights.get(str(item.get("severity", "INFO")).upper(), 0)
+
+    for item in sections.get("possible_issues", []):
+        score += possible_weights.get(str(item.get("severity", "INFO")).upper(), 0)
+
+    return min(round(score), 100)
+
+
+def enterprise_risk_from_score(score):
+    if score >= 80:
+        return "CRITICAL"
+    if score >= 55:
+        return "HIGH"
+    if score >= 25:
+        return "MEDIUM"
+    return "LOW"
+
+
+def build_enterprise_summary(sections):
+    return {
+        "confirmed": len(sections.get("confirmed_vulnerabilities", [])),
+        "possible": len(sections.get("possible_issues", [])),
+        "hardening": len(sections.get("hardening_issues", [])),
+        "attack_surface": len(sections.get("attack_surface", [])),
+        "informational": len(sections.get("informational_findings", [])),
+        "confirmed_high_or_critical": len([
+            x for x in sections.get("confirmed_vulnerabilities", [])
+            if str(x.get("severity", "")).upper() in ["HIGH", "CRITICAL"]
+        ]),
+        "note": "Confirmed vulnerabilities are separated from possible issues, hardening, attack surface, and informational findings."
+    }
+
+
 async def analyze(target, profile="full"):
     profile = profile.lower()
 
@@ -3487,6 +3639,13 @@ async def analyze(target, profile="full"):
         vulnerability_checks
     )
 
+    # Enterprise sections
+    enterprise_sections = build_enterprise_sections(findings, vulnerability_checks)
+    enterprise_summary = build_enterprise_summary(enterprise_sections)
+    score = calculate_enterprise_score(enterprise_sections)
+    risk = enterprise_risk_from_score(score)
+
+
     separated_results = separate_results(
         findings,
         vulnerability_checks
@@ -3591,6 +3750,12 @@ async def analyze(target, profile="full"):
         "vulnerabilities": [x.get("title") for x in separated_results.get("confirmed_vulnerabilities", [])],
         "vulnerability_checks": vulnerability_checks,
         "findings": findings,
+            "confirmed_vulnerabilities": enterprise_sections.get("confirmed_vulnerabilities", []),
+            "possible_issues": enterprise_sections.get("possible_issues", []),
+            "hardening_issues": enterprise_sections.get("hardening_issues", []),
+            "attack_surface": enterprise_sections.get("attack_surface", []),
+            "informational_findings": enterprise_sections.get("informational_findings", []),
+            "enterprise_summary": enterprise_summary,
         "separated_results": separated_results,
         "confirmed_vulnerabilities": separated_results.get("confirmed_vulnerabilities", []),
         "possible_issues": separated_results.get("possible_issues", []),

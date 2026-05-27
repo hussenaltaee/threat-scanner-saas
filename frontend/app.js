@@ -224,6 +224,105 @@ function renderAttackSurface(data) {
 }
 
 
+
+// =========================
+// Enterprise Sections Helpers
+// =========================
+function normalizeFindingList(list) {
+  return Array.isArray(list) ? list : [];
+}
+
+function classifyFindingFrontend(f) {
+  const status = String(f?.status || "").toUpperCase();
+  const severity = String(f?.severity || "INFO").toUpperCase();
+  const category = String(f?.category || "").toLowerCase();
+  const title = String(f?.title || f?.name || f?.type || "").toLowerCase();
+
+  if (status === "CONFIRMED") return "confirmed";
+  if (status === "POSSIBLE") return "possible";
+  if (status === "HARDENING") return "hardening";
+  if (category.includes("headers") || title.includes("missing security header")) return "hardening";
+  if (category.includes("attack surface") || category.includes("api") || category.includes("subdomain") || category.includes("robots")) return "attack_surface";
+  if (["CRITICAL", "HIGH", "MEDIUM"].includes(severity)) return "possible";
+  return "informational";
+}
+
+function buildFrontendSections(data) {
+  let confirmed = normalizeFindingList(data.confirmed_vulnerabilities);
+  let possible = normalizeFindingList(data.possible_issues);
+  let hardening = normalizeFindingList(data.hardening_issues);
+  let attackSurface = normalizeFindingList(data.attack_surface);
+  let informational = normalizeFindingList(data.informational_findings);
+
+  const hasBackendSections = confirmed.length || possible.length || hardening.length || attackSurface.length || informational.length;
+
+  if (!hasBackendSections) {
+    const combined = [
+      ...(Array.isArray(data.findings) ? data.findings : []),
+      ...(Array.isArray(data.vulnerability_checks) ? data.vulnerability_checks : [])
+    ];
+
+    for (const item of combined) {
+      const bucket = classifyFindingFrontend(item);
+      if (bucket === "confirmed") confirmed.push(item);
+      else if (bucket === "possible") possible.push(item);
+      else if (bucket === "hardening") hardening.push(item);
+      else if (bucket === "attack_surface") attackSurface.push(item);
+      else informational.push(item);
+    }
+  }
+
+  return {confirmed, possible, hardening, attackSurface, informational};
+}
+
+function renderFindingCard(f, defaultStatus = "INFO") {
+  const affectedUrl = getAffectedUrl(f);
+  const title = f.title || f.name || f.type || "Finding";
+  const status = f.status || defaultStatus;
+
+  return `
+    <div class="finding ${riskClass(f.severity)}">
+      <div class="finding-head">
+        <h4>${esc(title)}</h4>
+        <span class="finding-status">${esc(status)}</span>
+      </div>
+      ${renderMetaBadges({...f, status})}
+      <p><b>Category:</b> ${esc(f.category || "General")}</p>
+      <p><b>Description:</b> ${esc(f.description || f.impact || "N/A")}</p>
+      <p><b>Evidence:</b> ${esc(f.evidence || "N/A")}</p>
+      ${renderUrlActions(affectedUrl)}
+      ${f.fix_location ? `<p><b>Fix Location:</b> ${esc(f.fix_location)}</p>` : ""}
+      ${f.exploitability ? `<p><b>Exploitability:</b> ${esc(f.exploitability)}</p>` : ""}
+      <div class="fix-box"><b>Recommended Fix</b><p>${esc(f.fix || "Review manually")}</p></div>
+    </div>
+  `;
+}
+
+function renderEnterpriseSection(title, icon, items, emptyText, status, sectionClass) {
+  return `
+    <div class="result-card wide enterprise-section ${sectionClass}">
+      <div class="section-title-row">
+        <h3>${icon} ${title}</h3>
+        <span class="section-count">${items.length}</span>
+      </div>
+      ${items.length ? items.map(item => renderFindingCard(item, status)).join("") : `<p class="muted">${esc(emptyText)}</p>`}
+    </div>
+  `;
+}
+
+function renderEnterpriseSummaryCards(sections) {
+  return `
+    <div class="result-grid">
+      <div class="box confirmed-box"><span>Confirmed</span><h3>${sections.confirmed.length}</h3></div>
+      <div class="box possible-box"><span>Possible</span><h3>${sections.possible.length}</h3></div>
+      <div class="box hardening-box"><span>Hardening</span><h3>${sections.hardening.length}</h3></div>
+      <div class="box attack-box"><span>Attack Surface</span><h3>${sections.attackSurface.length}</h3></div>
+      <div class="box info-box"><span>Informational</span><h3>${sections.informational.length}</h3></div>
+    </div>
+  `;
+}
+
+
 // =========================
 // LOGIN
 // =========================
@@ -399,17 +498,17 @@ function renderScanResult(data) {
     return;
   }
 
+  lastReport = data;
+
   const openPorts = Array.isArray(data.open_ports) ? data.open_ports : [];
   const nmapPorts = Array.isArray(data.nmap_scan?.ports) ? data.nmap_scan.ports : [];
   const allPorts = openPorts.length ? openPorts : nmapPorts;
 
-  const findings = Array.isArray(data.findings) ? data.findings : [];
-  const vulns = Array.isArray(data.vulnerability_checks) ? data.vulnerability_checks : [];
-  const allFindings = [...findings, ...vulns];
-
   const cveGroups = Array.isArray(data.cve_results) ? data.cve_results : [];
   const technologies = Array.isArray(data.technologies) ? data.technologies : [];
   const subdomains = Array.isArray(data.subdomains) ? data.subdomains : [];
+  const sections = buildFrontendSections(data);
+  const allFindings = [...sections.confirmed, ...sections.possible, ...sections.hardening, ...sections.attackSurface, ...sections.informational];
 
   const cveCount = cveGroups.reduce((sum, group) => sum + ((group.cves || []).length), 0);
 
@@ -424,27 +523,6 @@ function renderScanResult(data) {
       </div>
     `).join("")
     : "<p class='muted'>No open ports returned</p>";
-
-  const findingHTML = allFindings.length
-    ? allFindings.map(f => {
-        const affectedUrl = getAffectedUrl(f);
-        return `
-          <div class="finding ${riskClass(f.severity)}">
-            <div class="finding-head">
-              <h4>${esc(f.title || f.name || f.type || "Finding")}</h4>
-              <span class="finding-status">${esc(f.status || "INFO")}</span>
-            </div>
-            ${renderMetaBadges(f)}
-            <p><b>Category:</b> ${esc(f.category || "General")}</p>
-            <p><b>Description:</b> ${esc(f.description || f.impact || "N/A")}</p>
-            <p><b>Evidence:</b> ${esc(f.evidence || "N/A")}</p>
-            ${renderUrlActions(affectedUrl)}
-            ${f.fix_location ? `<p><b>Fix Location:</b> ${esc(f.fix_location)}</p>` : ""}
-            <div class="fix-box"><b>Recommended Fix</b><p>${esc(f.fix || "Review manually")}</p></div>
-          </div>
-        `;
-      }).join("")
-    : "<p class='muted'>No findings returned</p>";
 
   const cveHTML = cveGroups.length
     ? cveGroups.map(group => `
@@ -494,8 +572,10 @@ function renderScanResult(data) {
         <div class="box"><span>Target Type</span><h3>${esc(data.target_type || "domain")}</h3></div>
         <div class="box"><span>Open Ports</span><h3>${allPorts.length}</h3></div>
         <div class="box"><span>CVEs</span><h3>${cveCount}</h3></div>
-        <div class="box"><span>Findings</span><h3>${allFindings.length}</h3></div>
+        <div class="box"><span>Total Findings</span><h3>${allFindings.length}</h3></div>
       </div>
+
+      ${renderEnterpriseSummaryCards(sections)}
 
       <div class="result-card wide">
         <h3>📊 Severity Overview</h3>
@@ -521,10 +601,7 @@ function renderScanResult(data) {
           <p><b>Error:</b> ${esc(data.nmap_scan?.error || "None")}</p>
         </div>
 
-        <div class="result-card">
-          <h3>🚪 Open Ports</h3>
-          ${portHTML}
-        </div>
+        <div class="result-card"><h3>🚪 Open Ports</h3>${portHTML}</div>
 
         <div class="result-card">
           <h3>🔒 SSL / TLS</h3>
@@ -549,35 +626,17 @@ function renderScanResult(data) {
           <p><b>Evidence:</b> ${safeList(data.waf?.evidence)}</p>
         </div>
 
-        <div class="result-card wide">
-          <h3>🧠 Technologies</h3>
-          <p>${safeList(technologies, "Unknown")}</p>
-        </div>
+        <div class="result-card wide"><h3>🧠 Technologies</h3><p>${safeList(technologies, "Unknown")}</p></div>
+        <div class="result-card wide"><h3>🌍 Threat Intelligence / ASN</h3>${renderThreatIntel(data)}</div>
+        <div class="result-card wide"><h3>🕸️ Attack Surface Map</h3>${renderAttackSurface(data)}</div>
+        <div class="result-card wide"><h3>🧬 CVE Results</h3>${cveHTML}</div>
+        <div class="result-card wide"><h3>🌐 Subdomains</h3>${subdomainHTML}</div>
 
-        <div class="result-card wide">
-          <h3>🌍 Threat Intelligence / ASN</h3>
-          ${renderThreatIntel(data)}
-        </div>
-
-        <div class="result-card wide">
-          <h3>🕸️ Attack Surface Map</h3>
-          ${renderAttackSurface(data)}
-        </div>
-
-        <div class="result-card wide">
-          <h3>🧬 CVE Results</h3>
-          ${cveHTML}
-        </div>
-
-        <div class="result-card wide">
-          <h3>🌐 Subdomains</h3>
-          ${subdomainHTML}
-        </div>
-
-        <div class="result-card wide">
-          <h3>🚨 Findings & Evidence</h3>
-          ${findingHTML}
-        </div>
+        ${renderEnterpriseSection("Confirmed Vulnerabilities", "🔴", sections.confirmed, "No confirmed vulnerabilities found.", "CONFIRMED", "confirmed-section")}
+        ${renderEnterpriseSection("Possible Issues / Manual Review", "🟡", sections.possible, "No possible issues returned.", "POSSIBLE", "possible-section")}
+        ${renderEnterpriseSection("Hardening Issues", "🛡️", sections.hardening, "No hardening issues returned.", "HARDENING", "hardening-section")}
+        ${renderEnterpriseSection("Attack Surface / Exposure", "🕸️", sections.attackSurface, "No attack surface findings returned.", "INFO", "attack-section")}
+        ${renderEnterpriseSection("Informational Findings", "🔵", sections.informational, "No informational findings returned.", "INFO", "info-section")}
 
         <div class="result-card wide">
           <h3>🧾 Raw JSON</h3>
@@ -938,6 +997,18 @@ function renderScanResult(data) {
       grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
       gap:10px;
     }
+
+
+
+    .enterprise-section{position:relative}
+    .section-title-row{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:12px}
+    .section-title-row h3{margin:0}
+    .section-count{min-width:34px;height:34px;display:inline-grid;place-items:center;border-radius:999px;background:#0a0a0a;border:1px solid rgba(255,255,255,.14);font-weight:900}
+    .confirmed-section,.confirmed-box{border-left:5px solid #ef4444 !important}
+    .possible-section,.possible-box{border-left:5px solid #f59e0b !important}
+    .hardening-section,.hardening-box{border-left:5px solid #22c55e !important}
+    .attack-section,.attack-box{border-left:5px solid #60a5fa !important}
+    .info-section,.info-box{border-left:5px solid #38bdf8 !important}
 
 
     @media(max-width:850px){
