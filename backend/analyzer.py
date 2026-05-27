@@ -2279,7 +2279,9 @@ def separate_results(findings, vulnerability_checks):
         "robots",
         "cve",
         "wayback",
-        "kxss"
+        "kxss",
+        "js endpoint",
+        "parameter miner"
     ]
 
     for item in combined:
@@ -2896,7 +2898,252 @@ async def run_kxss_like_checks(client, urls):
     return dedupe_dicts(results, ["affected_url", "parameter", "evidence_type"])
 
 
+
+
+# ============================================================
+# Real JS Endpoint Crawler + Parameter Miner
+# ============================================================
+JS_ENDPOINT_LIMIT = 120
+PARAM_TEST_LIMIT = 60
+
+
+def normalize_discovered_endpoint(base_url, endpoint):
+    try:
+        endpoint = str(endpoint or "").strip().strip("`").strip()
+
+        if not endpoint or len(endpoint) < 2:
+            return None
+
+        if endpoint.startswith(("data:", "javascript:", "mailto:", "#")):
+            return None
+
+        if "${" in endpoint or "}" in endpoint or endpoint.count("{") > 1:
+            return None
+
+        if endpoint.startswith("//"):
+            parsed_base = urlparse(str(base_url))
+            endpoint = f"{parsed_base.scheme}:{endpoint}"
+
+        if endpoint.startswith("/"):
+            return urljoin(str(base_url), endpoint)
+
+        if endpoint.startswith("http://") or endpoint.startswith("https://"):
+            return endpoint
+
+        if re.match(r"^(api|v[0-9]+|graphql|admin|auth|login|search|user|users|account|accounts|assets|static)/", endpoint, re.I):
+            return urljoin(str(base_url).rstrip("/") + "/", endpoint)
+
+        return None
+    except Exception:
+        return None
+
+
+def endpoint_severity(endpoint):
+    e = str(endpoint or "").lower()
+
+    if any(x in e for x in [".env", ".git", "secret", "token", "debug", "internal", "private", "admin", "swagger", "openapi"]):
+        return "MEDIUM"
+
+    if any(x in e for x in ["/api/", "graphql", "auth", "login", "redirect", "callback"]):
+        return "LOW"
+
+    return "INFO"
+
+
+def extract_endpoints_from_text(text, base_url, source):
+    text = str(text or "")
+    found = []
+
+    patterns = [
+        r'''fetch\s*\(\s*["'`]([^"'`]+)["'`]''',
+        r'''axios(?:\.[a-zA-Z]+)?\s*\(\s*["'`]([^"'`]+)["'`]''',
+        r'''axios\.(?:get|post|put|delete|patch)\s*\(\s*["'`]([^"'`]+)["'`]''',
+        r'''open\s*\(\s*["'`][A-Z]+["'`]\s*,\s*["'`]([^"'`]+)["'`]''',
+        r'''["'`](https?://[^"'`<>\s]+)["'`]''',
+        r'''["'`](\/(?:api|v[0-9]+|graphql|admin|auth|login|search|redirect|callback|user|users|account|accounts)[^"'`<>\s]*)["'`]''',
+        r'''["'`]((?:api|v[0-9]+|graphql|admin|auth|login|search|redirect|callback|user|users|account|accounts)\/[^"'`<>\s]*)["'`]''',
+    ]
+
+    for pattern in patterns:
+        try:
+            for match in re.findall(pattern, text, flags=re.IGNORECASE | re.DOTALL):
+                endpoint = match[0] if isinstance(match, tuple) else match
+                normalized = normalize_discovered_endpoint(base_url, endpoint)
+
+                if not normalized:
+                    continue
+
+                found.append({
+                    "endpoint": normalized,
+                    "source": source,
+                    "severity": endpoint_severity(normalized),
+                    "category": "JS Endpoint",
+                    "status": "INFO",
+                    "confidence": "MEDIUM",
+                    "affected_url": normalized,
+                    "fix_location": urlparse(normalized).path,
+                    "evidence": f"Endpoint discovered in {source}",
+                    "fix": "Review this endpoint and ensure authentication, authorization, and input validation are enforced."
+                })
+        except Exception:
+            continue
+
+    return dedupe_dicts(found, ["endpoint"])
+
+
+def extract_links_from_html(base_url, html):
+    html = str(html or "")
+    links = []
+
+    patterns = [
+        r'''href=["']([^"']+)["']''',
+        r'''action=["']([^"']+)["']''',
+        r'''src=["']([^"']+)["']''',
+    ]
+
+    for pattern in patterns:
+        try:
+            for item in re.findall(pattern, html, flags=re.IGNORECASE):
+                full = normalize_discovered_endpoint(base_url, item) or urljoin(str(base_url), item)
+                if full and full.startswith(("http://", "https://")):
+                    links.append(full)
+        except Exception:
+            continue
+
+    return list(dict.fromkeys(links))[:80]
+
+
+def mine_parameters_from_urls(urls):
+    params = []
+    common_param_names = [
+        "q", "s", "search", "query", "id", "page", "redirect", "url",
+        "next", "callback", "return", "ref", "lang", "token", "debug"
+    ]
+
+    for url in urls or []:
+        try:
+            parsed = urlparse(url)
+            qs = parse_qs(parsed.query, keep_blank_values=True)
+
+            for key in qs.keys():
+                test_url = inject_param(url, key, KXSS_TEST_PAYLOAD) if "inject_param" in globals() else url
+                params.append({
+                    "url": url,
+                    "parameter": key,
+                    "source": "existing_query",
+                    "test_url": test_url,
+                    "severity": "LOW",
+                    "category": "Parameter Miner",
+                    "status": "INFO",
+                    "confidence": "MEDIUM",
+                    "affected_url": test_url,
+                    "fix_location": f"Query parameter: {key}",
+                    "evidence": f"Parameter '{key}' discovered in URL.",
+                    "fix": "Validate and contextually encode this parameter wherever it is reflected or used."
+                })
+
+            if not qs and any(x in parsed.path.lower() for x in ["/search", "/api", "/login", "/redirect", "/callback"]):
+                for key in common_param_names[:4]:
+                    sep = "&" if parsed.query else "?"
+                    test_url = url + sep + urlencode({key: KXSS_TEST_PAYLOAD})
+                    params.append({
+                        "url": url,
+                        "parameter": key,
+                        "source": "generated_candidate",
+                        "test_url": test_url,
+                        "severity": "INFO",
+                        "category": "Parameter Miner",
+                        "status": "INFO",
+                        "confidence": "LOW",
+                        "affected_url": test_url,
+                        "fix_location": f"Candidate query parameter: {key}",
+                        "evidence": f"Candidate parameter '{key}' generated for testing based on path pattern.",
+                        "fix": "Only treat generated candidates as leads. Verify manually before remediation."
+                    })
+        except Exception:
+            continue
+
+    return dedupe_dicts(params, ["test_url", "parameter"])[:PARAM_TEST_LIMIT]
+
+
+async def run_js_endpoint_crawler(client, response, wayback=None):
+    result = {
+        "enabled": True,
+        "js_files": [],
+        "endpoints": [],
+        "parameters": [],
+        "kxss": [],
+        "error": None
+    }
+
+    if not response:
+        result["enabled"] = False
+        result["error"] = "No HTTP response available for JS crawling."
+        return result
+
+    try:
+        base_url = str(response.url)
+        html = response.text or ""
+
+        js_files = extract_js_urls(base_url, html)
+        result["js_files"] = js_files
+
+        all_urls = []
+        all_urls.extend(extract_links_from_html(base_url, html))
+        all_urls.extend(wayback.get("urls", []) if isinstance(wayback, dict) else [])
+        all_urls.extend(wayback.get("parameterized_urls", []) if isinstance(wayback, dict) else [])
+
+        endpoints = []
+        endpoints.extend(extract_endpoints_from_text(html, base_url, "main_html"))
+
+        tasks = [safe_get(client, js_url) for js_url in js_files[:25]]
+        responses = await asyncio.gather(*tasks)
+
+        for js_url, js_res in zip(js_files[:25], responses):
+            if not js_res or js_res.status_code != 200:
+                continue
+
+            js_text = js_res.text[:400000]
+            endpoints.extend(extract_endpoints_from_text(js_text, base_url, js_url))
+
+        endpoints = dedupe_dicts(endpoints, ["endpoint"])[:JS_ENDPOINT_LIMIT]
+        result["endpoints"] = endpoints
+
+        for item in endpoints:
+            all_urls.append(item.get("endpoint"))
+
+        all_urls = list(dict.fromkeys([u for u in all_urls if u]))[:200]
+
+        params = mine_parameters_from_urls(all_urls)
+        result["parameters"] = params
+
+        test_urls = [p.get("test_url") for p in params if p.get("test_url")]
+        if "run_kxss_like_checks" in globals():
+            result["kxss"] = await run_kxss_like_checks(client, test_urls)
+
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+
 async def analyze(target, profile="full"):
+    js_crawler = {"enabled": False, "js_files": [], "endpoints": [], "parameters": [], "kxss": [], "error": None}
+    js_endpoints = []
+    parameter_miner = []
+    kxss_results = []
+    wayback = {
+        "enabled": False,
+        "source": "web.archive.org CDX API",
+        "host": None,
+        "total": 0,
+        "urls": [],
+        "parameterized_urls": [],
+        "interesting_urls": [],
+        "error": None
+    }
+
     # Safe defaults for optional Wayback/KXSS engine
     wayback = {
         "enabled": False,
@@ -4001,6 +4248,9 @@ async def analyze(target, profile="full"):
         "cve_results": cve_results,
         "waf": waf,
             "wayback": wayback,
+            "js_crawler": js_crawler,
+            "js_endpoints": js_endpoints,
+            "parameter_miner": parameter_miner,
             "kxss_results": kxss_results,
         "http_methods": http_methods,
         "js_secrets": js_secrets,
@@ -4175,67 +4425,3 @@ def calculate_cvss_score(findings):
 
     return round(min(score,10.0),1)
 
-
-
-# =========================
-# JS Endpoint Crawler + Parameter Miner
-# =========================
-async def crawl_js_for_endpoints(client, base_url, response):
-    discovered = []
-
-    if not response:
-        return discovered
-
-    js_urls = extract_js_urls(base_url, response.text)
-
-    patterns = [
-        r'["\'](\/api\/[^"\']+)["\']',
-        r'["\'](\/v[0-9]+\/[^"\']+)["\']',
-        r'fetch\(["\']([^"\']+)["\']',
-        r'axios\.(?:get|post|put|delete)\(["\']([^"\']+)["\']'
-    ]
-
-    for js_url in js_urls[:20]:
-        try:
-            res = await safe_get(client, js_url)
-
-            if not res or res.status_code != 200:
-                continue
-
-            content = res.text[:300000]
-
-            for pattern in patterns:
-                matches = re.findall(pattern, content, flags=re.IGNORECASE)
-
-                for match in matches:
-                    endpoint = str(match).strip()
-
-                    if endpoint.startswith("/"):
-                        endpoint = urljoin(base_url, endpoint)
-
-                    discovered.append({
-                        "endpoint": endpoint,
-                        "source": js_url,
-                        "severity": "INFO"
-                    })
-
-        except Exception:
-            continue
-
-    return dedupe_dicts(discovered, ["endpoint"])
-
-
-def mine_parameters_from_url(url):
-    params = []
-
-    try:
-        parsed = urlparse(url)
-
-        if parsed.query:
-            for key in parse_qs(parsed.query).keys():
-                params.append(key)
-
-    except Exception:
-        pass
-
-    return list(set(params))

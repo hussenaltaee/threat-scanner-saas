@@ -204,6 +204,8 @@ function renderAttackSurface(data) {
   const subdomains = Array.isArray(data.subdomains) ? data.subdomains : [];
   const ports = Array.isArray(data.open_ports) ? data.open_ports : [];
   const exposures = data.advanced_exposures || data.exposures || [];
+  const jsEndpoints = data.js_endpoints || data.js_crawler?.endpoints || [];
+  const parameters = data.parameter_miner || data.js_crawler?.parameters || [];
 
   return `
     <div class="attack-grid">
@@ -211,6 +213,8 @@ function renderAttackSurface(data) {
       <div class="mini-result"><b>Subdomains</b><span>${subdomains.length || 0}</span></div>
       <div class="mini-result"><b>Open Ports</b><span>${ports.length || 0}</span></div>
       <div class="mini-result"><b>Exposures</b><span>${exposures.length || 0}</span></div>
+      <div class="mini-result"><b>JS Endpoints</b><span>${jsEndpoints.length || 0}</span></div>
+      <div class="mini-result"><b>Parameters</b><span>${parameters.length || 0}</span></div>
     </div>
     ${
       endpoints.length
@@ -318,6 +322,68 @@ function renderEnterpriseSummaryCards(sections) {
       <div class="box hardening-box"><span>Hardening</span><h3>${sections.hardening.length}</h3></div>
       <div class="box attack-box"><span>Attack Surface</span><h3>${sections.attackSurface.length}</h3></div>
       <div class="box info-box"><span>Informational</span><h3>${sections.informational.length}</h3></div>
+    </div>
+  `;
+}
+
+
+
+
+// =========================
+// JS Endpoint Crawler + Parameter Miner UI
+// =========================
+function renderJsCrawlerSection(data) {
+  const crawler = data.js_crawler || {};
+  const endpoints = data.js_endpoints || crawler.endpoints || [];
+  const params = data.parameter_miner || crawler.parameters || [];
+  const kxss = data.kxss_results || crawler.kxss || [];
+
+  return `
+    <div class="result-card wide">
+      <h3>🧠 JS Endpoint Crawler + Parameter Miner</h3>
+
+      <div class="result-grid">
+        <div class="box"><span>JS Files</span><h3>${(crawler.js_files || []).length}</h3></div>
+        <div class="box"><span>Endpoints</span><h3>${endpoints.length}</h3></div>
+        <div class="box"><span>Parameters</span><h3>${params.length}</h3></div>
+        <div class="box"><span>KXSS Reflections</span><h3>${kxss.length}</h3></div>
+      </div>
+
+      ${crawler.error ? `<p class="muted">Error: ${esc(crawler.error)}</p>` : ""}
+
+      <h4>Discovered Endpoints</h4>
+      ${
+        endpoints.length
+        ? endpoints.slice(0,60).map(e => `
+          <div class="mini-result">
+            <b>${esc(e.endpoint || e.url || "-")}</b>
+            <span>Severity: ${esc(e.severity || "INFO")} · Source: ${esc(e.source || "unknown")}</span>
+            ${renderUrlActions(e.endpoint || e.url)}
+          </div>
+        `).join("")
+        : `<p class="muted">No JS endpoints discovered.</p>`
+      }
+
+      <h4>Discovered Parameters</h4>
+      ${
+        params.length
+        ? params.slice(0,60).map(p => `
+          <div class="mini-result">
+            <b>${esc(p.parameter || "-")}</b>
+            <span>Source: ${esc(p.source || "unknown")}</span>
+            <small>${esc(p.test_url || p.url || "")}</small>
+            ${renderUrlActions(p.test_url || p.url)}
+          </div>
+        `).join("")
+        : `<p class="muted">No parameters discovered.</p>`
+      }
+
+      <h4>KXSS-like Reflections</h4>
+      ${
+        kxss.length
+        ? kxss.slice(0,30).map(k => renderFindingCard(k, k.status || "POSSIBLE")).join("")
+        : `<p class="muted">No reflected parameters found.</p>`
+      }
     </div>
   `;
 }
@@ -807,6 +873,7 @@ function renderScanResult(data) {
         <div class="result-card wide"><h3>🧠 Technologies</h3><p>${safeList(technologies, "Unknown")}</p></div>
         <div class="result-card wide"><h3>🌍 Threat Intelligence / ASN</h3>${renderThreatIntel(data)}</div>
         <div class="result-card wide"><h3>🕸️ Attack Surface Map</h3>${renderAttackSurface(data)}</div>
+        ${renderJsCrawlerSection(data)}
         <div class="result-card wide"><h3>🧬 CVE Results</h3>${cveHTML}</div>
         <div class="result-card wide"><h3>🌐 Subdomains</h3>${subdomainHTML}</div>
 
@@ -1229,35 +1296,3 @@ function exportHistory(){ downloadJSON(historyItems.map(normalizeItem), "scan-hi
 function downloadJSON(data, filename){ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename.replace(/[^a-z0-9_.-]/gi,"-").toLowerCase(); a.click(); URL.revokeObjectURL(url); }
 async function deleteHistory(id){ if(!confirm("Delete this scan from history?")) return; const {res,data}=await apiFetch("/history/"+id,{method:"DELETE"}); if(!res.ok){ alert(data.detail || "Could not delete scan"); return; } historyItems=historyItems.map(normalizeItem).filter(x=>Number(x.id)!==Number(id)); renderHistory(); showToast("Scan deleted"); }
 document.addEventListener("DOMContentLoaded", ()=>{ if($("queueBox")){ if(!getToken()){ requireLogin(); return; } loadData(false); if(!autoRefreshTimer){ autoRefreshTimer=setInterval(()=>{ const historySection=$("historySection"); if(historySection && historySection.classList.contains("active")) loadData(false); else loadQueueStatus(); },15000); } } });
-
-
-// =========================
-// JS Endpoint Crawler UI
-// =========================
-function renderDiscoveredEndpoints(data) {
-  const endpoints = data.js_endpoints || [];
-
-  if (!endpoints.length) {
-    return `
-      <div class="result-card">
-        <h3>🧠 JS Endpoint Crawler</h3>
-        <p class="muted">No JS endpoints discovered.</p>
-      </div>
-    `;
-  }
-
-  return `
-    <div class="result-card">
-      <h3>🧠 JS Endpoint Crawler</h3>
-
-      ${endpoints.map(e => `
-        <div class="finding medium">
-          <h4>${esc(e.endpoint || "Unknown Endpoint")}</h4>
-          <p><b>Source:</b> ${esc(e.source || "Unknown")}</p>
-          <p><b>Severity:</b> ${esc(e.severity || "INFO")}</p>
-          ${renderUrlActions(e.endpoint)}
-        </div>
-      `).join("")}
-    </div>
-  `;
-}
