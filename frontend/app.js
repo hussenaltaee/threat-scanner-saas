@@ -1,4 +1,7 @@
-const API = "https://threat-scanner-saas-2.onrender.com";
+const API = (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1") ? "http://127.0.0.1:8000" : "https://threat-scanner-saas-2.onrender.com";
+let historyItems = [];
+let autoRefreshTimer = null;
+let lastReport = null;
 
 // =========================
 // Helpers
@@ -19,6 +22,8 @@ function esc(value) {
 function getToken() {
   return localStorage.getItem("token");
 }
+
+function token(){ return getToken(); }
 
 function showMessage(msg, type = "info") {
   const out = $("out") || $("container");
@@ -373,6 +378,8 @@ async function scan() {
     }
 
     console.log("SCAN RESULT:", data);
+    lastReport = data;
+    if (typeof setStatus === "function") setStatus("✅ Scan completed");
     renderScanResult(data);
 
   } catch (err) {
@@ -941,3 +948,26 @@ function renderScanResult(data) {
 
   document.head.appendChild(style);
 })();
+
+
+// =========================
+// Dashboard / History / Export Functions - no-conflict external app.js mode
+// =========================
+function setStatus(msg){ const el = $("statusBox"); if (el) el.innerHTML = msg; }
+function showToast(msg){ let t = $("toast"); if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; document.body.appendChild(t); } t.innerHTML = esc(msg); t.style.display = "block"; setTimeout(() => t.style.display = "none", 2600); }
+function showSection(name){ const scanSection=$("scanSection"), historySection=$("historySection"), tabScan=$("tabScan"), tabHistory=$("tabHistory"); if(scanSection) scanSection.classList.toggle("active", name==="scan"); if(historySection) historySection.classList.toggle("active", name==="history"); if(tabScan) tabScan.classList.toggle("active", name==="scan"); if(tabHistory) tabHistory.classList.toggle("active", name==="history"); }
+function requireLogin(){ if(!getToken()){ const out=$("out")||$("container"); if(out) out.innerHTML = `<div class="result-card"><h2>❌ Not logged in</h2><p>Please login first.</p><button onclick="location.href='index.html'">Go to Login</button></div>`; return false; } return true; }
+async function apiFetch(path, options={}){ const res = await fetch(API + path, { ...options, headers:{ "Content-Type":"application/json", "Authorization":"Bearer " + getToken(), ...(options.headers || {}) }}); const data = await res.json().catch(()=>({})); if(res.status===401){ localStorage.removeItem("token"); showToast("Session expired. Login again."); } return {res,data}; }
+async function loadQueueStatus(){ if(!getToken()) return; const box=$("queueBox"); if(!box) return; try{ const {res,data}=await apiFetch("/queue-status"); if(!res.ok){ box.innerHTML=""; return; } box.innerHTML = `<div class="summary"><div class="card metric"><h3>📦 Queue Size</h3><p>${esc(data.queue_size ?? 0)}</p></div><div class="card metric medium"><h3>⚡ Running</h3><p>${esc(data.running ?? 0)}</p></div><div class="card metric"><h3>⏳ Queued</h3><p>${esc(data.queued ?? 0)}</p></div><div class="card metric low"><h3>✅ Completed</h3><p>${esc(data.completed ?? 0)}</p></div><div class="card metric high"><h3>❌ Failed</h3><p>${esc(data.failed ?? 0)}</p></div></div>`; }catch(e){ console.warn("Queue status failed", e); } }
+async function loadData(manual=false){ if(!getToken()){ const container=$("container"); if(container) container.innerHTML = `<div class="card high"><h3>❌ Not Logged In</h3><p>Please login first.</p></div>`; return; } await loadQueueStatus(); const container=$("container"); if(!container) return; try{ const {res,data}=await apiFetch("/history"); if(!res.ok){ container.innerHTML = `<div class="card high"><h3>❌ Error</h3><p>${esc(data.detail || "Could not load history")}</p></div>`; return; } historyItems = Array.isArray(data.data) ? data.data : []; renderHistory(); if(manual) showToast("Dashboard refreshed"); }catch(e){ container.innerHTML = `<div class="card high"><h3>❌ Error</h3><p>Could not connect to backend</p></div>`; } }
+function normalizeItem(item){ if(Array.isArray(item)) return {id:item[0], target:item[1], risk:item[2], score:item[3], created_at:item[4]}; return item || {}; }
+function renderHistory(){ const container=$("container"), stats=$("historyStats"); if(!container) return; const q=$("searchBox") ? $("searchBox").value.toLowerCase().trim() : ""; const filter=$("riskFilter") ? $("riskFilter").value : "ALL"; const sort=$("sortBox") ? $("sortBox").value : "newest"; let items=historyItems.map(normalizeItem); const total=items.length; const high=items.filter(x=>["HIGH","CRITICAL"].includes(String(x.risk).toUpperCase())).length; const med=items.filter(x=>String(x.risk).toUpperCase()==="MEDIUM").length; const avg=total ? Math.round(items.reduce((s,x)=>s+Number(x.score||0),0)/total) : 0; if(stats) stats.innerHTML = `<div class="card metric"><h3>🧾 Total Scans</h3><p>${total}</p></div><div class="card metric high"><h3>🚨 High/Critical</h3><p>${high}</p></div><div class="card metric medium"><h3>⚠️ Medium</h3><p>${med}</p></div><div class="card metric"><h3>📈 Average Score</h3><p>${avg}/100</p></div>`; if(q) items=items.filter(x=>String(x.target||"").toLowerCase().includes(q)); if(filter!=="ALL") items=items.filter(x=>String(x.risk||"UNKNOWN").toUpperCase()===filter); items.sort((a,b)=>{ if(sort==="oldest") return new Date(a.created_at||0)-new Date(b.created_at||0); if(sort==="score_high") return Number(b.score||0)-Number(a.score||0); if(sort==="score_low") return Number(a.score||0)-Number(b.score||0); return new Date(b.created_at||0)-new Date(a.created_at||0); }); if(!items.length){ container.innerHTML = `<div class="card"><h3>📭 No Scan History</h3><p>No scans match your filters.</p></div>`; return; } container.innerHTML = items.map(item=>{ const r=String(item.risk||"UNKNOWN").toUpperCase(); return `<div class="card ${riskClass(r)}"><div class="scan-title"><h3>🌐 ${esc(item.target || "Unknown target")}</h3><span class="badge ${esc(r)}">${esc(r)}</span></div><p><b>Score:</b> ${esc(item.score ?? "N/A")}/100</p><p><b>Date:</b> <span class="muted">${esc(item.created_at || "Unknown")}</span></p><div class="row"><button onclick="viewReport(${Number(item.id)})">View Report</button><button onclick="downloadSingleReport(${Number(item.id)})">JSON</button><button class="danger" onclick="deleteHistory(${Number(item.id)})">Delete</button></div></div>`; }).join(""); }
+function renderReportHTML(report){ return `<h1>🛡️ Scan Report</h1><div class="report-section ${riskClass(report.risk)}"><div class="mini-grid"><div class="mini"><b>Target</b>${esc(report.target || "-")}</div><div class="mini"><b>Risk</b>${esc(report.risk || "-")}</div><div class="mini"><b>Score</b>${esc(report.score ?? 0)}/100</div><div class="mini"><b>Host</b>${esc(report.host || "-")}</div></div></div><div class="report-section"><h2>📦 Full JSON</h2><pre>${esc(JSON.stringify(report, null, 2))}</pre></div>`; }
+async function viewReport(id){ const {res,data:report}=await apiFetch("/history/"+id); if(!res.ok){ alert(report.detail || "Could not load report"); return; } const win=window.open("","_blank"); win.document.write(`<!DOCTYPE html><html><head><title>Scan Report</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><style>${document.querySelector("style") ? document.querySelector("style").innerHTML : ""} body{padding:24px;background:#050505;color:#fff}</style></head><body><div class="wrap">${renderReportHTML(report)}<div class="row"><button onclick="window.print()">Download / Print PDF</button></div></div></body></html>`); win.document.close(); }
+async function downloadSingleReport(id){ const {res,data}=await apiFetch("/history/"+id); if(!res.ok){ alert(data.detail || "Could not load report"); return; } downloadJSON(data, `scan-report-${data.host || data.target || id}.json`); }
+function downloadLastJSON(){ if(!lastReport){ alert("No scan report yet"); return; } downloadJSON(lastReport, `scan-report-${lastReport.host || lastReport.target || "target"}.json`); }
+function downloadLastPDF(){ if(!lastReport){ alert("No scan report yet"); return; } const win=window.open("","_blank"); win.document.write(`<!DOCTYPE html><html><head><title>PDF Report</title><style>${document.querySelector("style") ? document.querySelector("style").innerHTML : ""} body{padding:24px;background:#050505;color:#fff}</style></head><body>${renderReportHTML(lastReport)}<script>window.print();<\/script></body></html>`); win.document.close(); }
+function exportHistory(){ downloadJSON(historyItems.map(normalizeItem), "scan-history.json"); }
+function downloadJSON(data, filename){ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename.replace(/[^a-z0-9_.-]/gi,"-").toLowerCase(); a.click(); URL.revokeObjectURL(url); }
+async function deleteHistory(id){ if(!confirm("Delete this scan from history?")) return; const {res,data}=await apiFetch("/history/"+id,{method:"DELETE"}); if(!res.ok){ alert(data.detail || "Could not delete scan"); return; } historyItems=historyItems.map(normalizeItem).filter(x=>Number(x.id)!==Number(id)); renderHistory(); showToast("Scan deleted"); }
+document.addEventListener("DOMContentLoaded", ()=>{ if($("queueBox")){ if(!getToken()){ requireLogin(); return; } loadData(false); if(!autoRefreshTimer){ autoRefreshTimer=setInterval(()=>{ const historySection=$("historySection"); if(historySection && historySection.classList.contains("active")) loadData(false); else loadQueueStatus(); },15000); } } });
