@@ -2232,7 +2232,11 @@ def separate_results(findings, vulnerability_checks):
             "confidence": item.get("confidence", "LOW"),
             "evidence_type": item.get("evidence_type", "generic"),
             "status": item.get("status", detection_status(item.get("severity"), item.get("confidence", "LOW"))),
-            "source": "vulnerability_check"
+            "source": "vulnerability_check",
+            "affected_url": item.get("affected_url") or item.get("url"),
+            "fix_location": item.get("fix_location") or item.get("path") or item.get("endpoint"),
+            "parameter": item.get("parameter"),
+            "original_url": item.get("original_url")
         })
 
     for item in findings:
@@ -2246,7 +2250,11 @@ def separate_results(findings, vulnerability_checks):
             "confidence": item.get("confidence", "LOW"),
             "evidence_type": item.get("evidence_type", "generic"),
             "status": item.get("status", detection_status(item.get("severity"), item.get("confidence", "LOW"))),
-            "source": "finding"
+            "source": "finding",
+            "affected_url": item.get("affected_url") or item.get("url"),
+            "fix_location": item.get("fix_location") or item.get("path") or item.get("endpoint"),
+            "parameter": item.get("parameter"),
+            "original_url": item.get("original_url")
         })
 
     combined = dedupe_dicts(combined, ["title", "severity", "evidence"])
@@ -2889,6 +2897,19 @@ async def run_kxss_like_checks(client, urls):
 
 
 async def analyze(target, profile="full"):
+    # Safe defaults for optional Wayback/KXSS engine
+    wayback = {
+        "enabled": False,
+        "source": "web.archive.org CDX API",
+        "host": None,
+        "total": 0,
+        "urls": [],
+        "parameterized_urls": [],
+        "interesting_urls": [],
+        "error": None
+    }
+    kxss_results = []
+
     profile = profile.lower()
 
     if profile not in ["quick", "full", "deep"]:
