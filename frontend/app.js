@@ -1229,3 +1229,35 @@ function exportHistory(){ downloadJSON(historyItems.map(normalizeItem), "scan-hi
 function downloadJSON(data, filename){ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename.replace(/[^a-z0-9_.-]/gi,"-").toLowerCase(); a.click(); URL.revokeObjectURL(url); }
 async function deleteHistory(id){ if(!confirm("Delete this scan from history?")) return; const {res,data}=await apiFetch("/history/"+id,{method:"DELETE"}); if(!res.ok){ alert(data.detail || "Could not delete scan"); return; } historyItems=historyItems.map(normalizeItem).filter(x=>Number(x.id)!==Number(id)); renderHistory(); showToast("Scan deleted"); }
 document.addEventListener("DOMContentLoaded", ()=>{ if($("queueBox")){ if(!getToken()){ requireLogin(); return; } loadData(false); if(!autoRefreshTimer){ autoRefreshTimer=setInterval(()=>{ const historySection=$("historySection"); if(historySection && historySection.classList.contains("active")) loadData(false); else loadQueueStatus(); },15000); } } });
+
+
+// =========================
+// JS Endpoint Crawler UI
+// =========================
+function renderDiscoveredEndpoints(data) {
+  const endpoints = data.js_endpoints || [];
+
+  if (!endpoints.length) {
+    return `
+      <div class="result-card">
+        <h3>🧠 JS Endpoint Crawler</h3>
+        <p class="muted">No JS endpoints discovered.</p>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="result-card">
+      <h3>🧠 JS Endpoint Crawler</h3>
+
+      ${endpoints.map(e => `
+        <div class="finding medium">
+          <h4>${esc(e.endpoint || "Unknown Endpoint")}</h4>
+          <p><b>Source:</b> ${esc(e.source || "Unknown")}</p>
+          <p><b>Severity:</b> ${esc(e.severity || "INFO")}</p>
+          ${renderUrlActions(e.endpoint)}
+        </div>
+      `).join("")}
+    </div>
+  `;
+}

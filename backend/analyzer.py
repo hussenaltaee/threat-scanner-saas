@@ -4175,3 +4175,67 @@ def calculate_cvss_score(findings):
 
     return round(min(score,10.0),1)
 
+
+
+# =========================
+# JS Endpoint Crawler + Parameter Miner
+# =========================
+async def crawl_js_for_endpoints(client, base_url, response):
+    discovered = []
+
+    if not response:
+        return discovered
+
+    js_urls = extract_js_urls(base_url, response.text)
+
+    patterns = [
+        r'["\'](\/api\/[^"\']+)["\']',
+        r'["\'](\/v[0-9]+\/[^"\']+)["\']',
+        r'fetch\(["\']([^"\']+)["\']',
+        r'axios\.(?:get|post|put|delete)\(["\']([^"\']+)["\']'
+    ]
+
+    for js_url in js_urls[:20]:
+        try:
+            res = await safe_get(client, js_url)
+
+            if not res or res.status_code != 200:
+                continue
+
+            content = res.text[:300000]
+
+            for pattern in patterns:
+                matches = re.findall(pattern, content, flags=re.IGNORECASE)
+
+                for match in matches:
+                    endpoint = str(match).strip()
+
+                    if endpoint.startswith("/"):
+                        endpoint = urljoin(base_url, endpoint)
+
+                    discovered.append({
+                        "endpoint": endpoint,
+                        "source": js_url,
+                        "severity": "INFO"
+                    })
+
+        except Exception:
+            continue
+
+    return dedupe_dicts(discovered, ["endpoint"])
+
+
+def mine_parameters_from_url(url):
+    params = []
+
+    try:
+        parsed = urlparse(url)
+
+        if parsed.query:
+            for key in parse_qs(parsed.query).keys():
+                params.append(key)
+
+    except Exception:
+        pass
+
+    return list(set(params))
