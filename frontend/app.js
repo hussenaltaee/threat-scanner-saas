@@ -330,23 +330,25 @@ function renderEnterpriseSummaryCards(sections) {
 
 
 // =========================
-// JS Endpoint Crawler + Parameter Miner UI
+// Smart Discovery: JS Crawler + Runtime APIs + Parameter Miner UI
 // =========================
 function renderJsCrawlerSection(data) {
-  const crawler = data.js_crawler || {};
+  const crawler = data.smart_discovery || data.js_crawler || {};
   const endpoints = data.js_endpoints || crawler.endpoints || [];
   const params = data.parameter_miner || crawler.parameters || [];
   const kxss = data.kxss_results || crawler.kxss || [];
+  const runtime = crawler.runtime_requests || [];
 
   return `
     <div class="result-card wide">
-      <h3>🧠 JS Endpoint Crawler + Parameter Miner</h3>
+      <h3>🧠 Smart Discovery: JS Crawler + Runtime APIs + Parameter Miner</h3>
 
       <div class="result-grid">
         <div class="box"><span>JS Files</span><h3>${(crawler.js_files || []).length}</h3></div>
         <div class="box"><span>Endpoints</span><h3>${endpoints.length}</h3></div>
         <div class="box"><span>Parameters</span><h3>${params.length}</h3></div>
         <div class="box"><span>KXSS Reflections</span><h3>${kxss.length}</h3></div>
+        <div class="box"><span>Runtime APIs</span><h3>${runtime.length}</h3></div>
       </div>
 
       ${crawler.error ? `<p class="muted">Error: ${esc(crawler.error)}</p>` : ""}
@@ -362,6 +364,19 @@ function renderJsCrawlerSection(data) {
           </div>
         `).join("")
         : `<p class="muted">No JS endpoints discovered.</p>`
+      }
+
+      <h4>Runtime Network Endpoints</h4>
+      ${
+        runtime.length
+        ? runtime.slice(0,60).map(e => `
+          <div class="mini-result">
+            <b>${esc(e.endpoint || e.url || "-")}</b>
+            <span>Method: ${esc(e.method || "GET")} · Source: ${esc(e.source || "runtime")}</span>
+            ${renderUrlActions(e.endpoint || e.url)}
+          </div>
+        `).join("")
+        : `<p class="muted">No runtime network endpoints captured.</p>`
       }
 
       <h4>Discovered Parameters</h4>

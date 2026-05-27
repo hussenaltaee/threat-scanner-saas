@@ -6,6 +6,13 @@ import dns.resolver
 import re
 import ipaddress
 import nmap
+
+try:
+    from playwright.async_api import async_playwright
+    PLAYWRIGHT_AVAILABLE = True
+except Exception:
+    async_playwright = None
+    PLAYWRIGHT_AVAILABLE = False
 from urllib.parse import urlparse, urljoin, parse_qs, urlencode, urlunparse
 
 
@@ -2281,7 +2288,9 @@ def separate_results(findings, vulnerability_checks):
         "wayback",
         "kxss",
         "js endpoint",
-        "parameter miner"
+        "parameter miner",
+        "runtime network",
+        "js endpoint crawler"
     ]
 
     for item in combined:
@@ -3128,7 +3137,352 @@ async def run_js_endpoint_crawler(client, response, wayback=None):
         return result
 
 
+
+# ============================================================
+# Smart Discovery Logic V2
+# JS Bundles + HTML Links + Runtime Network Extraction
+# ============================================================
+SMART_DISCOVERY_LIMIT = 180
+DYNAMIC_NETWORK_LIMIT = 120
+
+
+def clean_candidate_string(value):
+    value = str(value or "").strip().strip('"').strip("'").strip("`").strip()
+    value = value.replace("\\/", "/").replace("\\u002F", "/").replace("&amp;", "&")
+    return value
+
+
+def looks_like_endpoint(value):
+    v = str(value or "").strip().lower()
+    if not v or len(v) < 2 or len(v) > 500:
+        return False
+
+    bad_prefixes = ["data:", "javascript:", "mailto:", "tel:", "blob:", "about:", "#", "{", "}", "function", "return "]
+    if any(v.startswith(x) for x in bad_prefixes):
+        return False
+
+    indicators = [
+        "/api", "api/", "/v1", "/v2", "/v3", "graphql", "openapi", "swagger",
+        "auth", "login", "logout", "token", "session", "user", "account",
+        "search", "query", "redirect", "callback", "admin", "dashboard",
+        "webhook", "upload", "download", ".json", ".xml"
+    ]
+
+    if v.startswith(("http://", "https://", "/")) and any(x in v for x in indicators):
+        return True
+
+    if any(v.startswith(x) for x in ["api/", "v1/", "v2/", "v3/", "graphql", "auth/", "user/", "users/", "account/"]):
+        return True
+
+    if "?" in v and "=" in v:
+        return True
+
+    return False
+
+
+def smart_normalize_endpoint(base_url, candidate):
+    try:
+        candidate = clean_candidate_string(candidate)
+        if not looks_like_endpoint(candidate):
+            return None
+
+        if "${" in candidate or candidate.count("{") > 1 or candidate.count("}") > 1:
+            return None
+
+        if candidate.startswith("//"):
+            scheme = urlparse(str(base_url)).scheme or "https"
+            candidate = scheme + ":" + candidate
+
+        if candidate.startswith(("http://", "https://")):
+            return candidate
+
+        if candidate.startswith("/"):
+            return urljoin(str(base_url), candidate)
+
+        return urljoin(str(base_url).rstrip("/") + "/", candidate)
+
+    except Exception:
+        return None
+
+
+def extract_smart_endpoints_from_text(text, base_url, source):
+    text = str(text or "")
+    findings = []
+
+    patterns = [
+        r"fetch\s*\(\s*[\"'`]([^\"'`]+)[\"'`]",
+        r"axios(?:\.[a-zA-Z]+)?\s*\(\s*[\"'`]([^\"'`]+)[\"'`]",
+        r"axios\.(?:get|post|put|delete|patch)\s*\(\s*[\"'`]([^\"'`]+)[\"'`]",
+        r"(?:url|uri|href|endpoint|baseURL|baseUrl|apiUrl|api_url|path|route)\s*[:=]\s*[\"'`]([^\"'`]+)[\"'`]",
+        r"[\"'`](https?://[^\"'`<>\s]+)[\"'`]",
+        r"[\"'`](\/[^\"'`<>\s]*(?:api|graphql|auth|login|token|session|user|account|search|redirect|callback|admin|openapi|swagger)[^\"'`<>\s]*)[\"'`]",
+        r"[\"'`]((?:api|v[0-9]+|graphql|auth|login|token|session|user|users|account|accounts|search|redirect|callback|admin)\/[^\"'`<>\s]*)[\"'`]",
+        r"[\"'`]([^\"'`<>\s]+\?(?:[^\"'`<>\s=]+)=([^\"'`<>\s]*))[\"'`]",
+    ]
+
+    for pattern in patterns:
+        try:
+            for match in re.findall(pattern, text, flags=re.IGNORECASE | re.DOTALL):
+                candidate = match[0] if isinstance(match, tuple) else match
+                endpoint = smart_normalize_endpoint(base_url, candidate)
+                if endpoint:
+                    findings.append({
+                        "endpoint": endpoint,
+                        "source": source,
+                        "severity": endpoint_severity(endpoint) if "endpoint_severity" in globals() else "INFO",
+                        "category": "JS Endpoint",
+                        "status": "INFO",
+                        "confidence": "MEDIUM",
+                        "affected_url": endpoint,
+                        "fix_location": urlparse(endpoint).path,
+                        "evidence": f"Smart endpoint pattern found in {source}",
+                        "fix": "Review endpoint exposure and ensure authentication, authorization, and input validation are enforced."
+                    })
+        except Exception:
+            continue
+
+    return dedupe_dicts(findings, ["endpoint"])
+
+
+def extract_html_routes_and_forms(base_url, html):
+    html = str(html or "")
+    urls = []
+    patterns = [
+        r"href=[\"']([^\"']+)[\"']",
+        r"action=[\"']([^\"']+)[\"']",
+        r"src=[\"']([^\"']+)[\"']",
+        r"data-url=[\"']([^\"']+)[\"']",
+        r"data-endpoint=[\"']([^\"']+)[\"']",
+    ]
+
+    for pattern in patterns:
+        try:
+            for item in re.findall(pattern, html, flags=re.IGNORECASE):
+                item = clean_candidate_string(item)
+                full = smart_normalize_endpoint(base_url, item) or urljoin(str(base_url), item)
+                if full and full.startswith(("http://", "https://")):
+                    urls.append(full)
+        except Exception:
+            continue
+
+    return list(dict.fromkeys(urls))[:SMART_DISCOVERY_LIMIT]
+
+
+def extract_js_files_deep(base_url, html):
+    js_files = extract_js_urls(base_url, html) if "extract_js_urls" in globals() else []
+    html = str(html or "")
+
+    patterns = [
+        r"(?:src|href)=[\"']([^\"']+\.js(?:\?[^\"']*)?)[\"']",
+        r"[\"']([^\"']+(?:chunk|bundle|app|main|runtime|vendor)[^\"']+\.js(?:\?[^\"']*)?)[\"']",
+    ]
+
+    for pattern in patterns:
+        try:
+            for item in re.findall(pattern, html, flags=re.IGNORECASE):
+                full = urljoin(str(base_url), clean_candidate_string(item))
+                if full not in js_files:
+                    js_files.append(full)
+        except Exception:
+            continue
+
+    return js_files[:35]
+
+
+def build_parameter_candidates(urls):
+    params = []
+    common = ["q", "s", "search", "query", "id", "page", "redirect", "url", "next", "callback", "return", "ref"]
+
+    for url in urls or []:
+        try:
+            parsed = urlparse(url)
+            qs = parse_qs(parsed.query, keep_blank_values=True)
+
+            if qs:
+                for key in qs.keys():
+                    test_url = inject_param(url, key, KXSS_TEST_PAYLOAD) if "inject_param" in globals() else url
+                    params.append({
+                        "url": url,
+                        "parameter": key,
+                        "source": "existing_query",
+                        "test_url": test_url,
+                        "severity": "LOW",
+                        "category": "Parameter Miner",
+                        "status": "INFO",
+                        "confidence": "MEDIUM",
+                        "affected_url": test_url,
+                        "fix_location": f"Query parameter: {key}",
+                        "evidence": f"Existing parameter '{key}' discovered.",
+                        "fix": "Validate and contextually encode this parameter wherever it is reflected or used."
+                    })
+            else:
+                path = parsed.path.lower()
+                if any(x in path for x in ["search", "api", "login", "redirect", "callback", "user", "account"]):
+                    for key in common[:5]:
+                        test_url = url + ("&" if parsed.query else "?") + urlencode({key: KXSS_TEST_PAYLOAD})
+                        params.append({
+                            "url": url,
+                            "parameter": key,
+                            "source": "generated_candidate",
+                            "test_url": test_url,
+                            "severity": "INFO",
+                            "category": "Parameter Miner",
+                            "status": "INFO",
+                            "confidence": "LOW",
+                            "affected_url": test_url,
+                            "fix_location": f"Candidate query parameter: {key}",
+                            "evidence": f"Candidate parameter '{key}' generated from endpoint pattern.",
+                            "fix": "Generated candidates are leads only; verify manually."
+                        })
+        except Exception:
+            continue
+
+    return dedupe_dicts(params, ["test_url", "parameter"])[:100]
+
+
+async def extract_runtime_network_requests(target_url):
+    result = {"enabled": PLAYWRIGHT_AVAILABLE, "requests": [], "error": None}
+
+    if not PLAYWRIGHT_AVAILABLE or async_playwright is None:
+        result["error"] = "Playwright is not available or Chromium is not installed."
+        return result
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
+            page = await browser.new_page(user_agent="Mozilla/5.0 SecurityScanner/1.0")
+            seen = set()
+
+            def capture(req):
+                try:
+                    u = req.url
+                    if u in seen:
+                        return
+                    if looks_like_endpoint(u):
+                        seen.add(u)
+                        result["requests"].append({
+                            "endpoint": u,
+                            "method": req.method,
+                            "source": "playwright_network",
+                            "severity": endpoint_severity(u) if "endpoint_severity" in globals() else "INFO",
+                            "category": "Runtime Network",
+                            "status": "INFO",
+                            "confidence": "HIGH",
+                            "affected_url": u,
+                            "fix_location": urlparse(u).path,
+                            "evidence": f"Runtime {req.method} request captured by browser.",
+                            "fix": "Review runtime endpoint exposure and access controls."
+                        })
+                except Exception:
+                    pass
+
+            page.on("request", capture)
+
+            try:
+                await page.goto(target_url, wait_until="networkidle", timeout=15000)
+                await page.wait_for_timeout(2500)
+            except Exception:
+                pass
+
+            await browser.close()
+
+        result["requests"] = result["requests"][:DYNAMIC_NETWORK_LIMIT]
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+
+async def run_smart_discovery_v2(client, response, wayback=None):
+    result = {
+        "enabled": True,
+        "js_files": [],
+        "endpoints": [],
+        "parameters": [],
+        "runtime_requests": [],
+        "kxss": [],
+        "error": None
+    }
+
+    if not response:
+        result["enabled"] = False
+        result["error"] = "No HTTP response available."
+        return result
+
+    try:
+        base_url = str(response.url)
+        html = response.text or ""
+
+        js_files = extract_js_files_deep(base_url, html)
+        result["js_files"] = js_files
+
+        endpoints = []
+        all_urls = []
+
+        endpoints.extend(extract_smart_endpoints_from_text(html, base_url, "main_html"))
+        all_urls.extend(extract_html_routes_and_forms(base_url, html))
+
+        if isinstance(wayback, dict):
+            all_urls.extend(wayback.get("urls", []))
+            all_urls.extend(wayback.get("parameterized_urls", []))
+            for u in wayback.get("parameterized_urls", [])[:40]:
+                endpoints.append({
+                    "endpoint": u,
+                    "source": "wayback",
+                    "severity": endpoint_severity(u) if "endpoint_severity" in globals() else "INFO",
+                    "category": "Wayback Endpoint",
+                    "status": "INFO",
+                    "confidence": "LOW",
+                    "affected_url": u,
+                    "fix_location": urlparse(u).path,
+                    "evidence": "URL discovered from Wayback archive.",
+                    "fix": "Review historical URL exposure."
+                })
+
+        tasks = [safe_get(client, js_url) for js_url in js_files[:35]]
+        responses = await asyncio.gather(*tasks)
+
+        for js_url, js_res in zip(js_files[:35], responses):
+            if not js_res or js_res.status_code != 200:
+                continue
+            js_text = js_res.text[:600000]
+            endpoints.extend(extract_smart_endpoints_from_text(js_text, base_url, js_url))
+
+        runtime = await extract_runtime_network_requests(base_url)
+        result["runtime_requests"] = runtime.get("requests", [])
+        endpoints.extend(runtime.get("requests", []))
+
+        endpoints = dedupe_dicts(endpoints, ["endpoint"])[:SMART_DISCOVERY_LIMIT]
+        result["endpoints"] = endpoints
+
+        for e in endpoints:
+            all_urls.append(e.get("endpoint"))
+
+        all_urls = list(dict.fromkeys([u for u in all_urls if u and str(u).startswith(("http://", "https://"))]))[:250]
+        params = build_parameter_candidates(all_urls)
+        result["parameters"] = params
+
+        if "run_kxss_like_checks" in globals():
+            test_urls = [p.get("test_url") for p in params if p.get("test_url")]
+            result["kxss"] = await run_kxss_like_checks(client, test_urls[:60])
+
+        if runtime.get("error") and not result["endpoints"]:
+            result["error"] = runtime.get("error")
+
+        return result
+
+    except Exception as e:
+        result["error"] = str(e)
+        return result
+
+
 async def analyze(target, profile="full"):
+    smart_discovery = {"enabled": False, "js_files": [], "endpoints": [], "parameters": [], "runtime_requests": [], "kxss": [], "error": None}
+    js_crawler = {"enabled": False, "js_files": [], "endpoints": [], "parameters": [], "kxss": [], "error": None}
+    js_endpoints = []
+    parameter_miner = []
+
     js_crawler = {"enabled": False, "js_files": [], "endpoints": [], "parameters": [], "kxss": [], "error": None}
     js_endpoints = []
     parameter_miner = []
@@ -4248,6 +4602,7 @@ async def analyze(target, profile="full"):
         "cve_results": cve_results,
         "waf": waf,
             "wayback": wayback,
+            "smart_discovery": smart_discovery,
             "js_crawler": js_crawler,
             "js_endpoints": js_endpoints,
             "parameter_miner": parameter_miner,
