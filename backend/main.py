@@ -274,6 +274,22 @@ def remove_job_from_queue(job_id):
         return False
 
 
+def update_job_progress(job_id, progress, step, phase=None):
+    if job_id not in scan_jobs:
+        return
+    scan_jobs[job_id]["progress"] = progress
+    scan_jobs[job_id]["step"] = step
+    scan_jobs[job_id]["phase"] = phase or step
+    scan_jobs[job_id]["updated_at"] = datetime.utcnow().isoformat()
+
+
+def public_job_view(job):
+    if not job:
+        return None
+    clean = dict(job)
+    clean.pop("user_id", None)
+    return clean
+
 async def scan_worker():
     logger.info("Scan queue worker started")
 
@@ -397,11 +413,13 @@ async def scan_async(
         "status": "queued",
         "progress": 0,
         "step": "Scan queued",
+        "phase": "Queued",
         "target": data.target,
         "profile": data.profile,
         "result": None,
         "error": None,
         "created_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat(),
         "started_at": None,
         "completed_at": None,
         "queue_position": None,
@@ -498,8 +516,7 @@ async def run_scan_job(job_id, target, profile, user_id):
         scan_jobs[job_id]["status"] = "running"
         scan_jobs[job_id]["started_at"] = datetime.utcnow().isoformat()
         scan_jobs[job_id]["queue_position"] = None
-        scan_jobs[job_id]["progress"] = 10
-        scan_jobs[job_id]["step"] = "Preparing target"
+        update_job_progress(job_id, 10, "Preparing target", "Preparation")
 
         await asyncio.sleep(0.3)
 
@@ -509,8 +526,7 @@ async def run_scan_job(job_id, target, profile, user_id):
             scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
             return
 
-        scan_jobs[job_id]["progress"] = 20
-        scan_jobs[job_id]["step"] = "Checking DNS"
+        update_job_progress(job_id, 20, "Checking DNS records and target resolution", "DNS Analysis")
 
         await asyncio.sleep(0.3)
 
@@ -520,23 +536,19 @@ async def run_scan_job(job_id, target, profile, user_id):
             scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
             return
 
-        scan_jobs[job_id]["progress"] = 35
-        scan_jobs[job_id]["step"] = "Checking SSL / TLS"
+        update_job_progress(job_id, 35, "Checking SSL / TLS certificate and cipher", "SSL / TLS")
 
         await asyncio.sleep(0.3)
 
-        scan_jobs[job_id]["progress"] = 50
-        scan_jobs[job_id]["step"] = "Checking headers and cookies"
+        update_job_progress(job_id, 50, "Checking HTTP headers, cookies, and WAF indicators", "Headers / WAF")
 
         await asyncio.sleep(0.3)
 
-        scan_jobs[job_id]["progress"] = 65
-        scan_jobs[job_id]["step"] = "Running Nikto-like checks"
+        update_job_progress(job_id, 65, "Running exposure and sensitive-path checks", "Exposure Engine")
 
         await asyncio.sleep(0.3)
 
-        scan_jobs[job_id]["progress"] = 80
-        scan_jobs[job_id]["step"] = "Checking CVEs and subdomains"
+        update_job_progress(job_id, 80, "Checking CVEs, subdomains, APIs, and validation engine", "Deep Analysis")
 
         if scan_jobs[job_id].get("cancel_requested"):
             scan_jobs[job_id]["status"] = "cancelled"
@@ -554,8 +566,7 @@ async def run_scan_job(job_id, target, profile, user_id):
 
         result["profile"] = profile
 
-        scan_jobs[job_id]["progress"] = 95
-        scan_jobs[job_id]["step"] = "Saving report"
+        update_job_progress(job_id, 95, "Saving report and preparing final result", "Saving Report")
 
         scan_id = save_scan_result(target, result, user_id)
         result["scan_id"] = scan_id
@@ -564,8 +575,7 @@ async def run_scan_job(job_id, target, profile, user_id):
             send_discord_alert(target, result.get("risk"), result.get("score"), result)
 
         scan_jobs[job_id]["status"] = "completed"
-        scan_jobs[job_id]["progress"] = 100
-        scan_jobs[job_id]["step"] = "Scan completed"
+        update_job_progress(job_id, 100, "Scan completed", "Completed")
         scan_jobs[job_id]["result"] = result
         scan_jobs[job_id]["completed_at"] = datetime.utcnow().isoformat()
 
@@ -600,7 +610,7 @@ def scan_status(
     queue_size = scan_queue.qsize() if scan_queue else 0
     job["queue_size"] = queue_size
 
-    return job
+    return public_job_view(job)
 
 
 @app.get("/queue-status")

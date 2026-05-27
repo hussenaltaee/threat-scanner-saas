@@ -418,6 +418,182 @@ function logout() {
   window.location.href = "index.html";
 }
 
+
+// =========================
+// Live Scan Progress Helpers
+// =========================
+let currentScanJobId = null;
+let currentScanPollTimer = null;
+
+function progressStepsFromStatus(job) {
+  const progress = Number(job?.progress || 0);
+  const steps = [
+    {label: "Queued", min: 0},
+    {label: "Preparation", min: 10},
+    {label: "DNS Analysis", min: 20},
+    {label: "SSL / TLS", min: 35},
+    {label: "Headers / WAF", min: 50},
+    {label: "Exposure Engine", min: 65},
+    {label: "Deep Analysis", min: 80},
+    {label: "Saving Report", min: 95},
+    {label: "Completed", min: 100},
+  ];
+
+  return `
+    <div class="live-progress-card">
+      <div class="progress-topline">
+        <b>${esc(job?.phase || job?.step || "Preparing scan")}</b>
+        <span>${progress}%</span>
+      </div>
+      <div class="progress-track-live">
+        <div class="progress-fill-live" style="width:${Math.max(0, Math.min(100, progress))}%"></div>
+      </div>
+      <p class="muted">${esc(job?.step || "Scan queued")}</p>
+      ${job?.queue_position ? `<p class="muted"><b>Queue position:</b> ${esc(job.queue_position)}</p>` : ""}
+      <div class="progress-steps">
+        ${steps.map(s => {
+          const cls = progress >= s.min ? "done" : (progress + 15 >= s.min ? "active" : "");
+          const icon = progress >= s.min ? "✓" : (progress + 15 >= s.min ? "⟳" : "•");
+          return `<div class="step ${cls}">${icon} ${esc(s.label)}</div>`;
+        }).join("")}
+      </div>
+      ${(job?.status === "running" || job?.status === "queued") ? `<button class="danger cancel-live-btn" onclick="cancelCurrentScan()">Cancel Scan</button>` : ""}
+    </div>
+  `;
+}
+
+function renderLiveScanStatus(job) {
+  const out = $("out") || $("container");
+  if (!out) return;
+
+  out.innerHTML = `
+    <div class="result-card scanning-card">
+      <div class="scan-loader"></div>
+      <h2>🔍 Live Scan Progress</h2>
+      <p><b>Target:</b> ${esc(job?.target || "-")}</p>
+      <p><b>Profile:</b> ${esc(job?.profile || "-")}</p>
+      <p><b>Status:</b> ${esc(job?.status || "queued")}</p>
+      ${progressStepsFromStatus(job)}
+    </div>
+  `;
+
+  if (typeof setStatus === "function") {
+    setStatus(`${esc(job?.status || "queued")} — ${esc(job?.step || "Scan queued")}`);
+  }
+}
+
+async function pollScanStatus(jobId) {
+  try {
+    const res = await fetch(API + "/scan-status/" + encodeURIComponent(jobId), {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + getToken()
+      }
+    });
+
+    const job = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      clearInterval(currentScanPollTimer);
+      currentScanPollTimer = null;
+      showMessage(job.detail || "Could not read scan status", "error");
+      return;
+    }
+
+    renderLiveScanStatus(job);
+
+    if (job.status === "completed") {
+      clearInterval(currentScanPollTimer);
+      currentScanPollTimer = null;
+      currentScanJobId = null;
+
+      if (job.result) {
+        lastReport = job.result;
+        if (typeof setStatus === "function") setStatus("✅ Scan completed");
+        renderScanResult(job.result);
+        if (typeof loadData === "function") loadData(false);
+      } else {
+        showMessage("Scan completed, but no result returned", "success");
+      }
+      return;
+    }
+
+    if (job.status === "failed") {
+      clearInterval(currentScanPollTimer);
+      currentScanPollTimer = null;
+      currentScanJobId = null;
+      showMessage(job.error || "Scan failed", "error");
+      return;
+    }
+
+    if (job.status === "cancelled") {
+      clearInterval(currentScanPollTimer);
+      currentScanPollTimer = null;
+      currentScanJobId = null;
+      showMessage("Scan cancelled", "info");
+      return;
+    }
+
+  } catch (err) {
+    console.error(err);
+    clearInterval(currentScanPollTimer);
+    currentScanPollTimer = null;
+    showMessage("Live scan connection failed", "error");
+  }
+}
+
+async function startAsyncScan(target, profile) {
+  const res = await fetch(API + "/scan-async", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer " + getToken()
+    },
+    body: JSON.stringify({target, profile})
+  });
+
+  const data = await res.json().catch(() => ({}));
+
+  if (!res.ok) {
+    throw new Error(data.detail || "Could not start async scan");
+  }
+
+  return data;
+}
+
+async function cancelCurrentScan() {
+  if (!currentScanJobId) {
+    alert("No running scan");
+    return;
+  }
+
+  try {
+    const res = await fetch(API + "/cancel-scan/" + encodeURIComponent(currentScanJobId), {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + getToken()
+      }
+    });
+
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      alert(data.detail || "Cancel failed");
+      return;
+    }
+
+    if (typeof setStatus === "function") setStatus("Scan cancel requested");
+    await pollScanStatus(currentScanJobId);
+
+  } catch (err) {
+    console.error(err);
+    alert("Cancel request failed");
+  }
+}
+
+
 // =========================
 // START SCAN
 // Supports inputs: target OR t
@@ -444,49 +620,51 @@ async function scan() {
   const profile = profileInput ? profileInput.value : "full";
   const out = $("out") || $("container");
 
+  if (typeof showSection === "function") showSection("scan");
+
   if (out) {
     out.innerHTML = `
       <div class="result-card scanning-card">
         <div class="scan-loader"></div>
-        <h2>🔍 Scanning Target...</h2>
+        <h2>🔍 Starting Live Scan...</h2>
         <p><b>Target:</b> ${esc(target)}</p>
         <p><b>Profile:</b> ${esc(profile)}</p>
-        <p class="muted">Please wait while the scanner checks ports, SSL, DNS, headers, WAF, CVEs, and findings.</p>${renderProgressSteps()}
+        <p class="muted">Creating scan job and connecting to live progress...</p>
+        ${renderProgressSteps()}
       </div>
     `;
   }
 
   try {
-    const res = await fetch(API + "/scan", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + token
-      },
-      body: JSON.stringify({
-        target: target,
-        profile: profile
-      })
+    const job = await startAsyncScan(target, profile);
+
+    currentScanJobId = job.job_id;
+
+    renderLiveScanStatus({
+      job_id: job.job_id,
+      target,
+      profile,
+      status: job.status || "queued",
+      progress: 0,
+      step: job.message || "Scan queued",
+      phase: "Queued",
+      queue_position: job.queue_position,
+      queue_size: job.queue_size
     });
 
-    const data = await res.json().catch(() => ({}));
+    if (currentScanPollTimer) clearInterval(currentScanPollTimer);
 
-    if (!res.ok) {
-      showMessage(data.detail || "Scan failed: HTTP " + res.status, "error");
-      return;
-    }
+    await pollScanStatus(currentScanJobId);
 
-    console.log("SCAN RESULT:", data);
-    lastReport = data;
-    if (typeof setStatus === "function") setStatus("✅ Scan completed");
-    renderScanResult(data);
+    currentScanPollTimer = setInterval(() => {
+      if (currentScanJobId) pollScanStatus(currentScanJobId);
+    }, 1500);
 
   } catch (err) {
     console.error(err);
-    showMessage("Cannot connect to backend", "error");
+    showMessage(err.message || "Cannot start live scan", "error");
   }
 }
-
 // =========================
 // Render Scan Results
 // =========================
@@ -1009,6 +1187,15 @@ function renderScanResult(data) {
     .hardening-section,.hardening-box{border-left:5px solid #22c55e !important}
     .attack-section,.attack-box{border-left:5px solid #60a5fa !important}
     .info-section,.info-box{border-left:5px solid #38bdf8 !important}
+
+
+
+    .live-progress-card{max-width:520px;margin:18px auto 0;padding:16px;border-radius:18px;background:#070707;border:1px solid rgba(255,255,255,.12);text-align:left}
+    .progress-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+    .progress-topline span{font-weight:900;color:#dbeafe}
+    .progress-track-live{height:12px;border-radius:999px;overflow:hidden;background:#020202;border:1px solid rgba(255,255,255,.12);margin-bottom:10px}
+    .progress-fill-live{height:100%;border-radius:999px;background:linear-gradient(90deg,#60a5fa,#22c55e);transition:width .35s ease}
+    .cancel-live-btn{margin-top:14px;width:100%}
 
 
     @media(max-width:850px){
