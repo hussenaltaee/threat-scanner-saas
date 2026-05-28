@@ -1295,7 +1295,23 @@ function renderScanResult(data) {
 // =========================
 function setStatus(msg){ const el = $("statusBox"); if (el) el.innerHTML = msg; }
 function showToast(msg){ let t = $("toast"); if (!t) { t = document.createElement("div"); t.id = "toast"; t.className = "toast"; document.body.appendChild(t); } t.innerHTML = esc(msg); t.style.display = "block"; setTimeout(() => t.style.display = "none", 2600); }
-function showSection(name){ const scanSection=$("scanSection"), historySection=$("historySection"), tabScan=$("tabScan"), tabHistory=$("tabHistory"); if(scanSection) scanSection.classList.toggle("active", name==="scan"); if(historySection) historySection.classList.toggle("active", name==="history"); if(tabScan) tabScan.classList.toggle("active", name==="scan"); if(tabHistory) tabHistory.classList.toggle("active", name==="history"); }
+function showSection(name){
+  const scanSection = $("scanSection");
+  const historySection = $("historySection");
+  const bulkSection = $("bulkSection");
+
+  const tabScan = $("tabScan");
+  const tabHistory = $("tabHistory");
+  const tabBulk = $("tabBulk");
+
+  if(scanSection) scanSection.classList.toggle("active", name === "scan");
+  if(historySection) historySection.classList.toggle("active", name === "history");
+  if(bulkSection) bulkSection.classList.toggle("active", name === "bulk");
+
+  if(tabScan) tabScan.classList.toggle("active", name === "scan");
+  if(tabHistory) tabHistory.classList.toggle("active", name === "history");
+  if(tabBulk) tabBulk.classList.toggle("active", name === "bulk");
+}
 function requireLogin(){ if(!getToken()){ const out=$("out")||$("container"); if(out) out.innerHTML = `<div class="result-card"><h2>❌ Not logged in</h2><p>Please login first.</p><button onclick="location.href='index.html'">Go to Login</button></div>`; return false; } return true; }
 async function apiFetch(path, options={}){ const res = await fetch(API + path, { ...options, headers:{ "Content-Type":"application/json", "Authorization":"Bearer " + getToken(), ...(options.headers || {}) }}); const data = await res.json().catch(()=>({})); if(res.status===401){ localStorage.removeItem("token"); showToast("Session expired. Login again."); } return {res,data}; }
 async function loadQueueStatus(){ if(!getToken()) return; const box=$("queueBox"); if(!box) return; try{ const {res,data}=await apiFetch("/queue-status"); if(!res.ok){ box.innerHTML=""; return; } box.innerHTML = `<div class="summary"><div class="card metric"><h3>📦 Queue Size</h3><p>${esc(data.queue_size ?? 0)}</p></div><div class="card metric medium"><h3>⚡ Running</h3><p>${esc(data.running ?? 0)}</p></div><div class="card metric"><h3>⏳ Queued</h3><p>${esc(data.queued ?? 0)}</p></div><div class="card metric low"><h3>✅ Completed</h3><p>${esc(data.completed ?? 0)}</p></div><div class="card metric high"><h3>❌ Failed</h3><p>${esc(data.failed ?? 0)}</p></div></div>`; }catch(e){ console.warn("Queue status failed", e); } }
@@ -1311,3 +1327,333 @@ function exportHistory(){ downloadJSON(historyItems.map(normalizeItem), "scan-hi
 function downloadJSON(data, filename){ const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=filename.replace(/[^a-z0-9_.-]/gi,"-").toLowerCase(); a.click(); URL.revokeObjectURL(url); }
 async function deleteHistory(id){ if(!confirm("Delete this scan from history?")) return; const {res,data}=await apiFetch("/history/"+id,{method:"DELETE"}); if(!res.ok){ alert(data.detail || "Could not delete scan"); return; } historyItems=historyItems.map(normalizeItem).filter(x=>Number(x.id)!==Number(id)); renderHistory(); showToast("Scan deleted"); }
 document.addEventListener("DOMContentLoaded", ()=>{ if($("queueBox")){ if(!getToken()){ requireLogin(); return; } loadData(false); if(!autoRefreshTimer){ autoRefreshTimer=setInterval(()=>{ const historySection=$("historySection"); if(historySection && historySection.classList.contains("active")) loadData(false); else loadQueueStatus(); },15000); } } });
+
+
+// ============================================================
+// Stable Bulk Scan Patch - no CVE patch, no single-scan changes
+// ============================================================
+let currentBulkJobId = null;
+let currentBulkPollTimer = null;
+
+function normalizeBulkTargets(raw){
+  const seen = new Set();
+  return String(raw || "")
+    .split(/\r?\n|,/)
+    .map(x => x.trim())
+    .filter(Boolean)
+    .filter(x => {
+      if (x.startsWith("#")) return false;
+      const key = x.toLowerCase().replace(/\/+$/, "");
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+async function startBulkScan(){
+  if(!requireLogin()) return;
+
+  const input = $("bulkTargets");
+  const profileInput = $("bulkProfile");
+  const bulkStatus = $("bulkStatus");
+  const bulkResults = $("bulkResults");
+
+  const targets = normalizeBulkTargets(input ? input.value : "");
+  const profile = profileInput ? profileInput.value : "full";
+
+  if(!targets.length){
+    alert("أدخل روابط، كل رابط بسطر");
+    return;
+  }
+
+  if(bulkStatus) bulkStatus.innerHTML = `Starting bulk scan for ${targets.length} targets...`;
+
+  if(bulkResults){
+    bulkResults.innerHTML = `
+      <div class="result-card scanning-card">
+        <div class="scan-loader"></div>
+        <h2>🧩 Starting Bulk Scan...</h2>
+        <p>${esc(targets.length)} targets queued</p>
+      </div>
+    `;
+  }
+
+  try{
+    const {res, data} = await apiFetch("/bulk-scan/start", {
+      method: "POST",
+      body: JSON.stringify({
+        targets: targets,
+        profile: profile,
+        concurrency: 3,
+        include_archive: true
+      })
+    });
+
+    if(!res.ok){
+      throw new Error(data.detail || "Bulk scan start failed");
+    }
+
+    currentBulkJobId = data.bulk_scan_id || data.bulk_id || data.job_id || data.id;
+
+    if(!currentBulkJobId){
+      throw new Error("Backend did not return bulk_scan_id/bulk_id");
+    }
+
+    if(currentBulkPollTimer) clearInterval(currentBulkPollTimer);
+
+    await pollBulkStatus(currentBulkJobId);
+
+    currentBulkPollTimer = setInterval(() => {
+      if(currentBulkJobId) pollBulkStatus(currentBulkJobId);
+    }, 2000);
+
+  }catch(e){
+    console.error(e);
+
+    if(bulkStatus) bulkStatus.innerHTML = `Error: ${esc(e.message || e)}`;
+
+    if(bulkResults){
+      bulkResults.innerHTML = `
+        <div class="result-card high">
+          <h2>❌ Bulk Scan Error</h2>
+          <p>${esc(e.message || e)}</p>
+        </div>
+      `;
+    }
+  }
+}
+
+async function pollBulkStatus(id){
+  try{
+    const {res, data} = await apiFetch("/bulk-scan/status/" + encodeURIComponent(id));
+
+    if(!res.ok){
+      throw new Error(data.detail || "Could not read bulk status");
+    }
+
+    renderBulkStatus(data);
+
+    const status = String(data.status || "").toLowerCase();
+
+    if(["completed", "failed", "cancelled"].includes(status)){
+      if(currentBulkPollTimer) clearInterval(currentBulkPollTimer);
+      currentBulkPollTimer = null;
+      await loadBulkResults(id);
+    }
+
+  }catch(e){
+    console.error(e);
+
+    if(currentBulkPollTimer) clearInterval(currentBulkPollTimer);
+    currentBulkPollTimer = null;
+
+    const bulkStatus = $("bulkStatus");
+    if(bulkStatus) bulkStatus.innerHTML = `Bulk status error: ${esc(e.message || e)}`;
+  }
+}
+
+function renderBulkStatus(job){
+  const total = Number(job.total || job.total_targets || 0);
+  const completed = Number(job.completed || job.scanned || 0);
+  const failed = Number(job.failed || 0);
+  const vulnerable = Number(job.vulnerable_targets || job.vulnerable || 0);
+  const progress = Number(job.progress || (total ? Math.round(((completed + failed) / total) * 100) : 0));
+  const status = job.status || "running";
+  const current = job.current_target || "";
+
+  const bulkStatus = $("bulkStatus");
+
+  if(bulkStatus){
+    bulkStatus.innerHTML = `
+      <b>Status:</b> ${esc(status)}<br>
+      <b>Progress:</b> ${esc(progress)}% · ${esc(completed + failed)}/${esc(total || "?")}<br>
+      <b>Vulnerable:</b> ${esc(vulnerable)} · <b>Failed:</b> ${esc(failed)}<br>
+      ${current ? `<b>Current:</b> ${esc(current)}<br>` : ""}
+      <div class="progress-track-live" style="margin-top:10px">
+        <div class="progress-fill-live" style="width:${Math.max(0, Math.min(100, progress))}%"></div>
+      </div>
+    `;
+  }
+
+  const bulkResults = $("bulkResults");
+
+  if(bulkResults && !String(status).match(/completed|failed|cancelled/i)){
+    bulkResults.innerHTML = `
+      <div class="result-card scanning-card">
+        <div class="scan-loader"></div>
+        <h2>🧩 Bulk Scan Running</h2>
+        <div class="result-grid">
+          <div class="box"><span>Total</span><h3>${esc(total)}</h3></div>
+          <div class="box"><span>Done</span><h3>${esc(completed)}</h3></div>
+          <div class="box high"><span>Vulnerable</span><h3>${esc(vulnerable)}</h3></div>
+          <div class="box"><span>Failed</span><h3>${esc(failed)}</h3></div>
+        </div>
+      </div>
+    `;
+  }
+}
+
+async function loadBulkResults(id){
+  try{
+    const {res, data} = await apiFetch("/bulk-scan/results/" + encodeURIComponent(id));
+
+    if(!res.ok){
+      throw new Error(data.detail || "Could not read bulk results");
+    }
+
+    lastReport = data;
+    renderBulkResults(data);
+
+  }catch(e){
+    console.error(e);
+
+    const bulkResults = $("bulkResults");
+    if(bulkResults){
+      bulkResults.innerHTML = `
+        <div class="result-card high">
+          <h2>❌ Bulk Results Error</h2>
+          <p>${esc(e.message || e)}</p>
+        </div>
+      `;
+    }
+  }
+}
+
+function renderBulkResults(data){
+  const results = Array.isArray(data.results) ? data.results : [];
+  const total = data.total || data.total_targets || results.length;
+  const vulnerable = data.vulnerable_targets ?? results.filter(r => ["MEDIUM","HIGH","CRITICAL"].includes(String(r.risk || r.result?.risk || "").toUpperCase())).length;
+  const failed = data.failed ?? results.filter(r => r.status === "failed" || r.error).length;
+
+  const affectedUrls = [];
+  const archiveUrls = [];
+
+  results.forEach(r => {
+    const rr = r.result || r;
+    const target = r.target || rr.target || "target";
+
+    (rr.vulnerable_urls || rr.infected_urls || []).forEach(u => {
+      affectedUrls.push({
+        target,
+        url: typeof u === "string" ? u : (u.url || u.affected_url)
+      });
+    });
+
+    (rr.archive_urls || rr.wayback_urls || rr.wayback_archive_urls || []).forEach(u => {
+      archiveUrls.push({
+        target,
+        url: typeof u === "string" ? u : (u.url || u.archive_url)
+      });
+    });
+  });
+
+  const bulkResults = $("bulkResults");
+  if(!bulkResults) return;
+
+  bulkResults.innerHTML = `
+    <div class="result-card wide">
+      <h2>🧩 Bulk Scan Results</h2>
+      <div class="result-grid">
+        <div class="box"><span>Total Targets</span><h3>${esc(total)}</h3></div>
+        <div class="box high"><span>Vulnerable Targets</span><h3>${esc(vulnerable)}</h3></div>
+        <div class="box"><span>Failed</span><h3>${esc(failed)}</h3></div>
+        <div class="box"><span>Affected URLs</span><h3>${affectedUrls.length}</h3></div>
+        <div class="box"><span>Archive URLs</span><h3>${archiveUrls.length}</h3></div>
+      </div>
+    </div>
+
+    <div class="result-card wide">
+      <h3>🚨 Vulnerable / Affected URLs</h3>
+      ${
+        affectedUrls.length
+        ? affectedUrls.slice(0,120).map(x => `
+          <div class="mini-result">
+            <b>${esc(x.target || "target")}</b>
+            ${renderUrlActions(x.url)}
+          </div>
+        `).join("")
+        : `<p class="muted">No affected URLs returned.</p>`
+      }
+    </div>
+
+    <div class="result-card wide">
+      <h3>🕰️ Wayback Archive URLs</h3>
+      ${
+        archiveUrls.length
+        ? archiveUrls.slice(0,160).map(x => `
+          <div class="mini-result">
+            <b>${esc(x.target || "target")}</b>
+            ${renderUrlActions(x.url)}
+          </div>
+        `).join("")
+        : `<p class="muted">No archive URLs returned.</p>`
+      }
+    </div>
+
+    <div class="result-card wide">
+      <h3>🌐 Targets Summary</h3>
+      ${
+        results.length
+        ? results.map(r => {
+          const rr = r.result || r;
+          const risk = rr.risk || r.risk || "UNKNOWN";
+          const target = r.target || rr.target || "Unknown";
+          const confirmed = rr.confirmed_count ?? rr.confirmed_vulnerabilities?.length ?? 0;
+          const possible = rr.possible_count ?? rr.possible_issues?.length ?? 0;
+
+          return `
+            <div class="finding ${riskClass(risk)}">
+              <div class="finding-head">
+                <h4>${esc(target)}</h4>
+                <span class="badge ${esc(String(risk).toUpperCase())}">${esc(risk)}</span>
+              </div>
+              <p><b>Score:</b> ${esc(rr.score ?? 0)}/100</p>
+              <p><b>Confirmed:</b> ${esc(confirmed)} · <b>Possible:</b> ${esc(possible)}</p>
+              ${rr.final_url ? renderUrlActions(rr.final_url) : ""}
+              ${r.error ? `<p><b>Error:</b> ${esc(r.error)}</p>` : ""}
+            </div>
+          `;
+        }).join("")
+        : `<p class="muted">No results returned.</p>`
+      }
+    </div>
+
+    <div class="result-card wide">
+      <h3>🧾 Raw Bulk JSON</h3>
+      <pre>${esc(JSON.stringify(data, null, 2))}</pre>
+    </div>
+  `;
+}
+
+async function cancelBulkScan(){
+  if(!currentBulkJobId){
+    alert("No bulk scan running");
+    return;
+  }
+
+  try{
+    const {res, data} = await apiFetch("/bulk-scan/cancel/" + encodeURIComponent(currentBulkJobId), {
+      method: "POST"
+    });
+
+    if(!res.ok){
+      throw new Error(data.detail || "Cancel bulk failed");
+    }
+
+    showToast("Bulk scan cancel requested");
+    await pollBulkStatus(currentBulkJobId);
+
+  }catch(e){
+    alert(e.message || "Cancel failed");
+  }
+}
+
+function downloadBulkJSON(){
+  if(!lastReport){
+    alert("No bulk report yet");
+    return;
+  }
+
+  downloadJSON(lastReport, "bulk-scan-report.json");
+}
+
