@@ -3394,6 +3394,234 @@ async def extract_runtime_network_requests(target_url):
         return result
 
 
+RUNTIME_SECRET_PATTERNS = [
+    "api_key", "apikey", "access_token", "client_secret", "bearer ",
+    "authorization", "aws_access_key", "private_key", "secret=", "token="
+]
+
+
+def _runtime_limit_list(items, limit):
+    try:
+        return list(items or [])[:limit]
+    except Exception:
+        return []
+
+
+async def run_runtime_discovery_v3(target_url, timeout_ms=18000):
+    """
+    Runtime Discovery powered by Playwright.
+
+    Defensive purpose:
+    - Opens the page in a real Chromium browser.
+    - Captures runtime API/network requests created by JavaScript.
+    - Extracts forms after rendering.
+    - Collects console warnings/errors.
+    - Detects low-confidence secret indicators for manual review only.
+
+    This function never raises an exception to the main scanner.
+    If Chromium/Playwright is missing on Render, the scanner continues normally.
+    """
+    result = {
+        "enabled": PLAYWRIGHT_AVAILABLE,
+        "engine": "playwright-chromium",
+        "final_url": None,
+        "title": None,
+        "status_code": None,
+        "network_requests": [],
+        "api_endpoints": [],
+        "forms": [],
+        "js_files": [],
+        "console_errors": [],
+        "possible_secrets": [],
+        "summary": {
+            "total_network_requests": 0,
+            "api_endpoints": 0,
+            "forms": 0,
+            "js_files": 0,
+            "console_errors": 0,
+            "possible_secrets": 0
+        },
+        "error": None
+    }
+
+    if not PLAYWRIGHT_AVAILABLE or async_playwright is None:
+        result["enabled"] = False
+        result["error"] = "Playwright is not available. Add playwright to requirements.txt and install Chromium in Dockerfile."
+        return result
+
+    try:
+        if not str(target_url).startswith(("http://", "https://")):
+            target_url = normalize_target(target_url)
+
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-setuid-sandbox"
+                ]
+            )
+
+            page = await browser.new_page(
+                viewport={"width": 1366, "height": 768},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 Chrome/120 Safari/537.36 ThreatScanner/Runtime"
+                )
+            )
+
+            seen_requests = set()
+            seen_api = set()
+            seen_js = set()
+
+            def on_console(msg):
+                try:
+                    if msg.type in ["error", "warning"]:
+                        result["console_errors"].append({
+                            "type": msg.type,
+                            "text": str(msg.text)[:300]
+                        })
+                except Exception:
+                    pass
+
+            def on_request(req):
+                try:
+                    req_url = req.url
+                    if req_url in seen_requests:
+                        return
+                    seen_requests.add(req_url)
+
+                    parsed = urlparse(req_url)
+                    path = parsed.path.lower()
+                    resource_type = req.resource_type
+
+                    item = {
+                        "method": req.method,
+                        "url": req_url[:600],
+                        "resource_type": resource_type,
+                        "path": parsed.path,
+                        "source": "playwright_runtime"
+                    }
+
+                    result["network_requests"].append(item)
+
+                    if resource_type == "script" or req_url.lower().split("?")[0].endswith(".js"):
+                        if req_url not in seen_js:
+                            seen_js.add(req_url)
+                            result["js_files"].append(req_url[:600])
+
+                    is_api = (
+                        looks_like_endpoint(req_url)
+                        or "/api/" in path
+                        or path.startswith("/api")
+                        or "graphql" in path
+                        or "openapi" in path
+                        or "swagger" in path
+                        or "ajax" in path
+                        or "rest" in path
+                    )
+
+                    if is_api and req_url not in seen_api:
+                        seen_api.add(req_url)
+                        result["api_endpoints"].append({
+                            "endpoint": req_url[:600],
+                            "method": req.method,
+                            "source": "playwright_runtime",
+                            "severity": endpoint_severity(req_url) if "endpoint_severity" in globals() else "INFO",
+                            "category": "Runtime Network",
+                            "status": "INFO",
+                            "confidence": "HIGH",
+                            "affected_url": req_url[:600],
+                            "fix_location": parsed.path,
+                            "evidence": f"Runtime {req.method} request captured by Chromium.",
+                            "fix": "Review runtime endpoint exposure and make sure authentication, authorization, and input validation are enforced."
+                        })
+                except Exception:
+                    pass
+
+            page.on("console", on_console)
+            page.on("request", on_request)
+
+            response = None
+            try:
+                response = await page.goto(target_url, wait_until="networkidle", timeout=timeout_ms)
+            except Exception:
+                try:
+                    response = await page.goto(target_url, wait_until="domcontentloaded", timeout=timeout_ms)
+                except Exception:
+                    response = None
+
+            try:
+                await page.wait_for_timeout(2000)
+            except Exception:
+                pass
+
+            result["final_url"] = page.url
+            result["title"] = await page.title()
+            result["status_code"] = response.status if response else None
+
+            html = ""
+            try:
+                html = await page.content()
+            except Exception:
+                html = ""
+
+            # Extract rendered forms without external parsers.
+            try:
+                forms = await page.eval_on_selector_all(
+                    "form",
+                    """forms => forms.map(f => ({
+                        action: f.action || window.location.href,
+                        method: (f.method || 'GET').toUpperCase(),
+                        inputs: Array.from(f.querySelectorAll('input, textarea, select')).map(i => ({
+                            name: i.getAttribute('name'),
+                            type: i.getAttribute('type') || i.tagName.toLowerCase()
+                        }))
+                    }))"""
+                )
+                result["forms"] = forms or []
+            except Exception:
+                result["forms"] = []
+
+            lower_html = str(html or "").lower()
+            for pattern in RUNTIME_SECRET_PATTERNS:
+                if pattern in lower_html:
+                    result["possible_secrets"].append({
+                        "pattern": pattern,
+                        "severity": "INFO",
+                        "confidence": "LOW",
+                        "evidence": "Keyword pattern appeared in rendered DOM. Manual review required.",
+                        "fix": "Do not expose real secrets in frontend HTML or JavaScript. Move secrets to backend environment variables."
+                    })
+
+            await browser.close()
+
+        result["network_requests"] = _runtime_limit_list(result["network_requests"], 100)
+        result["api_endpoints"] = dedupe_dicts(_runtime_limit_list(result["api_endpoints"], 50), ["endpoint", "method"])
+        result["forms"] = _runtime_limit_list(result["forms"], 30)
+        result["js_files"] = list(dict.fromkeys(result["js_files"]))[:40]
+        result["console_errors"] = _runtime_limit_list(result["console_errors"], 25)
+        result["possible_secrets"] = dedupe_dicts(_runtime_limit_list(result["possible_secrets"], 25), ["pattern"])
+
+        result["summary"] = {
+            "total_network_requests": len(result["network_requests"]),
+            "api_endpoints": len(result["api_endpoints"]),
+            "forms": len(result["forms"]),
+            "js_files": len(result["js_files"]),
+            "console_errors": len(result["console_errors"]),
+            "possible_secrets": len(result["possible_secrets"])
+        }
+
+        return result
+
+    except Exception as e:
+        result["enabled"] = False
+        result["error"] = str(e)
+        return result
+
+
 async def run_smart_discovery_v2(client, response, wayback=None):
     result = {
         "enabled": True,
@@ -3479,6 +3707,7 @@ async def run_smart_discovery_v2(client, response, wayback=None):
 
 async def analyze(target, profile="full"):
     smart_discovery = {"enabled": False, "js_files": [], "endpoints": [], "parameters": [], "runtime_requests": [], "kxss": [], "error": None}
+    runtime_discovery = {"enabled": False, "engine": "playwright-chromium", "network_requests": [], "api_endpoints": [], "forms": [], "js_files": [], "console_errors": [], "possible_secrets": [], "summary": {}, "error": None}
     js_crawler = {"enabled": False, "js_files": [], "endpoints": [], "parameters": [], "kxss": [], "error": None}
     js_endpoints = []
     parameter_miner = []
@@ -4560,6 +4789,25 @@ async def analyze(target, profile="full"):
         score=score
     )
 
+    # Runtime Discovery: run Chromium only for full/deep profiles and never break the main scan.
+    if profile in ["full", "deep"]:
+        try:
+            runtime_target_url = str(response.url) if response else url
+            runtime_discovery = await run_runtime_discovery_v3(runtime_target_url)
+        except Exception as e:
+            runtime_discovery = {
+                "enabled": False,
+                "engine": "playwright-chromium",
+                "network_requests": [],
+                "api_endpoints": [],
+                "forms": [],
+                "js_files": [],
+                "console_errors": [],
+                "possible_secrets": [],
+                "summary": {},
+                "error": str(e)
+            }
+
     return {
         "target": target,
         "host": host,
@@ -4603,6 +4851,7 @@ async def analyze(target, profile="full"):
         "waf": waf,
             "wayback": wayback,
             "smart_discovery": smart_discovery,
+            "runtime_discovery": runtime_discovery,
             "js_crawler": js_crawler,
             "js_endpoints": js_endpoints,
             "parameter_miner": parameter_miner,
