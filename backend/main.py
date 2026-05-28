@@ -4,6 +4,7 @@ from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
 import requests
+import httpx
 import json
 import uuid
 import asyncio
@@ -686,6 +687,94 @@ def normalize_bulk_targets(raw_targets):
     return cleaned
 
 
+async def get_wayback_archive_urls(client, host):
+    """
+    Lightweight Wayback Archive discovery.
+    Returns old URLs, parameterized URLs, and interesting/sensitive paths.
+    Safe for bulk scans and does not stop the scan if archive.org is unavailable.
+    """
+    result = {
+        "enabled": True,
+        "source": "web.archive.org",
+        "host": host,
+        "urls": [],
+        "interesting_urls": [],
+        "parameterized_urls": [],
+        "error": None
+    }
+
+    try:
+        if not host:
+            result["enabled"] = False
+            result["error"] = "No host provided"
+            return result
+
+        host = str(host).replace("http://", "").replace("https://", "").split("/")[0].strip()
+
+        params = {
+            "url": f"{host}/*",
+            "output": "json",
+            "fl": "original,statuscode,mimetype",
+            "collapse": "urlkey",
+            "filter": "statuscode:200",
+            "limit": "80"
+        }
+
+        res = await client.get("https://web.archive.org/cdx", params=params, timeout=12)
+
+        if res.status_code != 200:
+            result["enabled"] = False
+            result["error"] = f"Wayback HTTP {res.status_code}"
+            return result
+
+        data = res.json()
+        rows = data[1:] if isinstance(data, list) and len(data) > 1 else []
+
+        sensitive_keywords = [
+            "admin", "login", "dashboard", "api", "backup", "config",
+            "debug", "test", "dev", "staging", "old", "private",
+            ".env", ".git", "sql", "zip", "token", "secret"
+        ]
+
+        urls = []
+        interesting = []
+        parameterized = []
+
+        for row in rows:
+            if not row:
+                continue
+
+            url = row[0] if isinstance(row, list) else str(row)
+            if not url or not url.startswith(("http://", "https://")):
+                continue
+
+            item = {
+                "url": url,
+                "status": row[1] if isinstance(row, list) and len(row) > 1 else None,
+                "mime": row[2] if isinstance(row, list) and len(row) > 2 else None
+            }
+
+            urls.append(item)
+
+            lower = url.lower()
+            if "?" in url:
+                parameterized.append(item)
+
+            if any(k in lower for k in sensitive_keywords):
+                interesting.append(item)
+
+        result["urls"] = urls[:80]
+        result["interesting_urls"] = interesting[:40]
+        result["parameterized_urls"] = parameterized[:40]
+
+        return result
+
+    except Exception as e:
+        result["enabled"] = False
+        result["error"] = str(e)
+        return result
+
+
 def extract_result_urls(result):
     urls = []
 
@@ -788,6 +877,12 @@ def summarize_bulk_result(target, result, error=None):
 def public_bulk_view(job, include_results=True):
     clean = dict(job)
     clean.pop("user_id", None)
+
+    # Frontend compatibility:
+    # older/newer app.js versions may read either bulk_id or bulk_scan_id.
+    if clean.get("bulk_id") and not clean.get("bulk_scan_id"):
+        clean["bulk_scan_id"] = clean["bulk_id"]
+
     if not include_results:
         clean.pop("results", None)
         clean.pop("raw_results", None)
@@ -942,8 +1037,25 @@ async def bulk_scan_start(
         )
     )
 
-    return public_bulk_view(bulk_jobs[bulk_id], include_results=False)
+    response = public_bulk_view(bulk_jobs[bulk_id], include_results=False)
+    response["bulk_scan_id"] = bulk_id
+    response["bulk_id"] = bulk_id
+    response["queued_targets"] = len(targets)
+    response["success"] = True
+    return response
 
+
+
+
+@app.post("/bulk-scan")
+@limiter.limit("3/minute")
+async def bulk_scan_start_alias(
+    request: Request,
+    data: BulkScanRequest,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    return await bulk_scan_start(request, data, auth, user)
 
 @app.get("/bulk-scan/status/{bulk_id}")
 @limiter.limit("120/minute")
