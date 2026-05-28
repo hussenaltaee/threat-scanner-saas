@@ -1701,6 +1701,226 @@ async def run_real_validation_engine(client, response):
 
 
 
+
+# ============================================================
+# CVE Intelligence Engine v2
+# ============================================================
+
+def classify_cve_attack_type(description, weaknesses=None):
+    text = (description or "").lower()
+    weaknesses_text = " ".join([str(x) for x in (weaknesses or [])]).lower()
+    combined = f"{text} {weaknesses_text}"
+
+    rules = [
+        ("Remote Code Execution", ["remote code execution", "rce", "execute arbitrary code", "code execution"]),
+        ("Authentication Bypass", ["authentication bypass", "auth bypass", "bypass authentication", "unauthenticated"]),
+        ("Privilege Escalation", ["privilege escalation", "escalate privileges", "gain privileges"]),
+        ("Directory Traversal / LFI", ["directory traversal", "path traversal", "local file inclusion", "lfi", "read arbitrary file"]),
+        ("SQL Injection", ["sql injection", "sqli"]),
+        ("Cross-Site Scripting", ["cross-site scripting", "xss"]),
+        ("SSRF", ["server-side request forgery", "ssrf"]),
+        ("Deserialization", ["deserialization", "unserialize", "pickle"]),
+        ("Information Disclosure", ["information disclosure", "sensitive information", "exposure", "leak"]),
+        ("Denial of Service", ["denial of service", "dos", "crash", "resource exhaustion"]),
+    ]
+
+    detected = []
+    for label, patterns in rules:
+        if any(pattern in combined for pattern in patterns):
+            detected.append(label)
+
+    return detected or ["General Vulnerability"]
+
+
+def extract_cvss_data(metrics):
+    metrics = metrics or {}
+
+    for key in ["cvssMetricV40", "cvssMetricV31", "cvssMetricV30", "cvssMetricV2"]:
+        if key not in metrics or not metrics[key]:
+            continue
+
+        item = metrics[key][0]
+        cvss = item.get("cvssData", {})
+
+        return {
+            "version": cvss.get("version") or key.replace("cvssMetricV", "CVSS v"),
+            "score": cvss.get("baseScore"),
+            "severity": cvss.get("baseSeverity") or item.get("baseSeverity") or "UNKNOWN",
+            "vector": cvss.get("vectorString"),
+            "attack_vector": cvss.get("attackVector"),
+            "attack_complexity": cvss.get("attackComplexity"),
+            "privileges_required": cvss.get("privilegesRequired"),
+            "user_interaction": cvss.get("userInteraction"),
+            "scope": cvss.get("scope"),
+            "confidentiality": cvss.get("confidentialityImpact"),
+            "integrity": cvss.get("integrityImpact"),
+            "availability": cvss.get("availabilityImpact")
+        }
+
+    return {
+        "version": None,
+        "score": None,
+        "severity": "UNKNOWN",
+        "vector": None,
+        "attack_vector": None,
+        "attack_complexity": None,
+        "privileges_required": None,
+        "user_interaction": None,
+        "scope": None,
+        "confidentiality": None,
+        "integrity": None,
+        "availability": None
+    }
+
+
+def extract_cwe_list(cve):
+    weaknesses = []
+
+    for weakness in cve.get("weaknesses", []) or []:
+        for desc in weakness.get("description", []) or []:
+            value = desc.get("value")
+            if value and value not in weaknesses:
+                weaknesses.append(value)
+
+    return weaknesses
+
+
+def extract_cve_references(cve):
+    refs = []
+
+    for ref in cve.get("references", {}).get("referenceData", []) or []:
+        url = ref.get("url")
+        source = ref.get("source")
+        tags = ref.get("tags", []) or []
+
+        if url:
+            refs.append({
+                "url": url,
+                "source": source,
+                "tags": tags
+            })
+
+    return refs[:20]
+
+
+def analyze_public_exploit_intel(cve_id, references, description):
+    description_l = (description or "").lower()
+    refs = references or []
+    ref_text = " ".join([str(r.get("url", "")) + " " + " ".join(r.get("tags", []) or []) for r in refs]).lower()
+
+    exploit_keywords = [
+        "exploit", "proof of concept", "poc", "metasploit", "packetstorm",
+        "exploit-db", "0day", "weaponized"
+    ]
+
+    github_poc = any("github.com" in str(r.get("url", "")).lower() for r in refs)
+    exploit_db = any("exploit-db.com" in str(r.get("url", "")).lower() for r in refs)
+    metasploit = "metasploit" in ref_text
+    public_exploit = any(k in ref_text or k in description_l for k in exploit_keywords)
+
+    search_links = {
+        "nvd": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+        "github_poc_search": f"https://github.com/search?q={cve_id}+poc&type=repositories",
+        "exploit_db_search": f"https://www.exploit-db.com/search?cve={cve_id.replace('CVE-', '') if cve_id else ''}",
+        "google_search": f"https://www.google.com/search?q={cve_id}+exploit+poc"
+    }
+
+    if exploit_db or metasploit:
+        exploitability = "HIGH"
+    elif public_exploit or github_poc:
+        exploitability = "MEDIUM"
+    else:
+        exploitability = "UNKNOWN"
+
+    return {
+        "public_exploit_indicators": bool(public_exploit or github_poc or exploit_db or metasploit),
+        "github_poc_reference": github_poc,
+        "exploit_db_reference": exploit_db,
+        "metasploit_reference": metasploit,
+        "exploitability": exploitability,
+        "search_links": search_links,
+        "note": "Exploit intelligence is based on public references and safe search links only; no exploitation is performed."
+    }
+
+
+def estimate_patch_guidance(description, references):
+    text = (description or "").lower()
+    patch_words = ["fixed", "patched", "upgrade", "update", "prior to", "before", "version"]
+    has_patch_signal = any(w in text for w in patch_words)
+
+    vendor_refs = []
+    for ref in references or []:
+        url = str(ref.get("url", ""))
+        if any(x in url.lower() for x in ["github.com", "gitlab", "vendor", "advisory", "security"]):
+            vendor_refs.append(url)
+
+    return {
+        "patch_signal_found": has_patch_signal,
+        "guidance": "Update to the latest patched version from the vendor. Verify the detected product version before marking this CVE applicable.",
+        "vendor_or_advisory_refs": vendor_refs[:5]
+    }
+
+
+def build_cve_intelligence(cve_id, description, cvss, weaknesses, references):
+    attack_types = classify_cve_attack_type(description, weaknesses)
+    exploit_intel = analyze_public_exploit_intel(cve_id, references, description)
+    patch = estimate_patch_guidance(description, references)
+
+    score = cvss.get("score")
+    severity = cvss.get("severity") or "UNKNOWN"
+
+    internet_exposure_risk = "LOW"
+    if score is not None and score >= 9:
+        internet_exposure_risk = "CRITICAL"
+    elif score is not None and score >= 7:
+        internet_exposure_risk = "HIGH"
+    elif score is not None and score >= 4:
+        internet_exposure_risk = "MEDIUM"
+
+    if exploit_intel.get("exploitability") == "HIGH" and internet_exposure_risk in ["HIGH", "MEDIUM"]:
+        internet_exposure_risk = "CRITICAL" if severity == "CRITICAL" else "HIGH"
+
+    return {
+        "attack_types": attack_types,
+        "cvss": cvss,
+        "weaknesses": weaknesses,
+        "exploit_intelligence": exploit_intel,
+        "patch": patch,
+        "internet_exposure_risk": internet_exposure_risk,
+        "version_correlation_required": True,
+        "safe_recommendation": "Confirm the exact affected product/version before treating this as confirmed. If version matches, patch immediately and prioritize public-exploit CVEs."
+    }
+
+
+def build_cve_intelligence_summary(cve_results):
+    all_cves = []
+    for group in cve_results or []:
+        for cve in group.get("cves", []) or []:
+            enriched = dict(cve)
+            enriched["technology"] = group.get("technology")
+            all_cves.append(enriched)
+
+    def score_key(cve):
+        return float(cve.get("score") or cve.get("cvss", {}).get("score") or 0)
+
+    public_exploits = [c for c in all_cves if c.get("intelligence", {}).get("exploit_intelligence", {}).get("public_exploit_indicators")]
+    critical = [c for c in all_cves if str(c.get("severity", "")).upper() == "CRITICAL" or score_key(c) >= 9]
+    high = [c for c in all_cves if str(c.get("severity", "")).upper() == "HIGH" or 7 <= score_key(c) < 9]
+    rce = [c for c in all_cves if "Remote Code Execution" in c.get("intelligence", {}).get("attack_types", [])]
+
+    top = sorted(all_cves, key=lambda c: (1 if c in public_exploits else 0, score_key(c)), reverse=True)[:10]
+
+    return {
+        "total_cves": len(all_cves),
+        "critical_count": len(critical),
+        "high_count": len(high),
+        "public_exploit_indicators_count": len(public_exploits),
+        "rce_count": len(rce),
+        "top_priority": top,
+        "note": "CVE intelligence is advisory unless exact product/version is confirmed by service fingerprinting."
+    }
+
+
 async def fetch_cves_for_keyword(client, keyword):
     cves = []
 
@@ -1709,10 +1929,10 @@ async def fetch_cves_for_keyword(client, keyword):
 
         params = {
             "keywordSearch": keyword,
-            "resultsPerPage": 3
+            "resultsPerPage": 5
         }
 
-        res = await client.get(url, params=params, timeout=8)
+        res = await client.get(url, params=params, timeout=10)
 
         if res.status_code != 200:
             return cves
@@ -1723,41 +1943,39 @@ async def fetch_cves_for_keyword(client, keyword):
             cve = item.get("cve", {})
             cve_id = cve.get("id")
             published = cve.get("published")
+            last_modified = cve.get("lastModified")
             descriptions = cve.get("descriptions", [])
 
             description = "No description"
 
             for d in descriptions:
                 if d.get("lang") == "en":
-                    description = d.get("value")
+                    description = d.get("value") or description
                     break
 
             metrics = cve.get("metrics", {})
-            severity = "UNKNOWN"
-            cvss_score = None
-
-            if "cvssMetricV31" in metrics:
-                cvss = metrics["cvssMetricV31"][0]["cvssData"]
-                severity = cvss.get("baseSeverity", "UNKNOWN")
-                cvss_score = cvss.get("baseScore")
-
-            elif "cvssMetricV30" in metrics:
-                cvss = metrics["cvssMetricV30"][0]["cvssData"]
-                severity = cvss.get("baseSeverity", "UNKNOWN")
-                cvss_score = cvss.get("baseScore")
-
-            elif "cvssMetricV2" in metrics:
-                cvss = metrics["cvssMetricV2"][0]["cvssData"]
-                severity = metrics["cvssMetricV2"][0].get("baseSeverity", "UNKNOWN")
-                cvss_score = cvss.get("baseScore")
+            cvss = extract_cvss_data(metrics)
+            weaknesses = extract_cwe_list(cve)
+            references = extract_cve_references(cve)
+            intelligence = build_cve_intelligence(cve_id, description, cvss, weaknesses, references)
 
             cves.append({
                 "id": cve_id,
                 "published": published,
-                "severity": severity,
-                "score": cvss_score,
-                "description": description[:300] + "..." if len(description) > 300 else description,
-                "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}"
+                "last_modified": last_modified,
+                "severity": cvss.get("severity", "UNKNOWN"),
+                "score": cvss.get("score"),
+                "cvss_vector": cvss.get("vector"),
+                "cvss": cvss,
+                "weaknesses": weaknesses,
+                "references": references,
+                "description": description[:500] + "..." if len(description) > 500 else description,
+                "url": f"https://nvd.nist.gov/vuln/detail/{cve_id}",
+                "intelligence": intelligence,
+                "exploitability": intelligence.get("exploit_intelligence", {}).get("exploitability"),
+                "public_exploit_indicators": intelligence.get("exploit_intelligence", {}).get("public_exploit_indicators"),
+                "attack_types": intelligence.get("attack_types", []),
+                "patch_guidance": intelligence.get("patch", {}).get("guidance")
             })
 
     except Exception:
@@ -1801,7 +2019,7 @@ async def check_cves(client, technologies):
         else:
             keywords.append(tech)
 
-    keywords = list(set(keywords))[:3]
+    keywords = list(set(keywords))[:4]
 
     if not keywords:
         return results
@@ -1816,7 +2034,8 @@ async def check_cves(client, technologies):
     for keyword, cves in zip(keywords, responses):
         results.append({
             "technology": keyword,
-            "cves": cves
+            "cves": cves,
+            "intelligence_summary": build_cve_intelligence_summary([{"technology": keyword, "cves": cves}])
         })
 
     return results
@@ -4683,37 +4902,82 @@ async def analyze(target, profile="full"):
         )
 
     tech_text = " ".join(technologies + vulnerabilities)
+    cve_intelligence_summary = build_cve_intelligence_summary(cve_results)
 
     for item in cve_results:
         for cve in item.get("cves", []):
 
             severity = cve.get("severity", "UNKNOWN")
+            intelligence = cve.get("intelligence", {}) or {}
+            exploit_intel = intelligence.get("exploit_intelligence", {}) or {}
+            attack_types = intelligence.get("attack_types", []) or []
+            cvss_score = cve.get("score")
+            exploitability = cve.get("exploitability") or exploit_intel.get("exploitability")
+            public_exploit = bool(cve.get("public_exploit_indicators") or exploit_intel.get("public_exploit_indicators"))
 
             if not has_version_info(tech_text):
+                # Do not count advisory CVEs as confirmed when we do not have reliable version evidence.
                 severity = "INFO"
-
+                confidence = "LOW"
+                status = "INFO"
             else:
                 score += severity_points(severity)
+                confidence = "MEDIUM"
+                status = "POSSIBLE"
+
+            if public_exploit and severity in ["CRITICAL", "HIGH"] and has_version_info(tech_text):
+                confidence = "HIGH"
+
+            evidence = (
+                f"Technology: {item.get('technology')} | CVSS: {cvss_score or 'N/A'} | "
+                f"Exploitability: {exploitability or 'UNKNOWN'} | "
+                f"Public exploit indicators: {'YES' if public_exploit else 'NO'} | "
+                f"Attack types: {', '.join(attack_types[:4]) if attack_types else 'General'} | "
+                f"NVD: {cve.get('url')}"
+            )
+
+            fix_text = (
+                cve.get("patch_guidance")
+                or "Verify the exact affected product/version, then update to the latest patched release or apply vendor mitigations."
+            )
 
             add_vuln(
                 vulnerability_checks,
-                f"Possible CVE Match: {cve.get('id')}",
+                f"CVE Intelligence: {cve.get('id')}",
                 severity,
-                f"Technology: {item.get('technology')}",
+                evidence,
                 cve.get("description", "No description"),
-                f"Review {cve.get('url')} and update or patch if applicable.",
-                "CVE"
+                fix_text,
+                "CVE Intelligence",
+                confidence,
+                "cve_intelligence"
             )
+
+            vulnerability_checks[-1]["status"] = status
+            vulnerability_checks[-1]["affected_url"] = cve.get("url")
+            vulnerability_checks[-1]["cvss"] = cvss_score
+            vulnerability_checks[-1]["exploitability"] = exploitability
+            vulnerability_checks[-1]["public_exploit_indicators"] = public_exploit
+            vulnerability_checks[-1]["attack_types"] = attack_types
 
             add_finding(
                 findings,
-                f"Possible CVE Match: {cve.get('id')}",
+                f"CVE Intelligence: {cve.get('id')}",
                 severity,
                 f"Technology: {item.get('technology')} | {cve.get('description')}",
-                f"Review: {cve.get('url')} and update/patch the affected technology if applicable.",
-                "CVE",
-                cve.get("url")
+                fix_text,
+                "CVE Intelligence",
+                evidence,
+                confidence,
+                "cve_intelligence"
             )
+
+            findings[-1]["status"] = status
+            findings[-1]["affected_url"] = cve.get("url")
+            findings[-1]["cvss"] = cvss_score
+            findings[-1]["exploitability"] = exploitability
+            findings[-1]["public_exploit_indicators"] = public_exploit
+            findings[-1]["attack_types"] = attack_types
 
     vulnerabilities = dedupe_list(vulnerabilities)
     alerts = dedupe_list(alerts + vulnerabilities)
@@ -4848,6 +5112,7 @@ async def analyze(target, profile="full"):
         }),
         "technologies": technologies,
         "cve_results": cve_results,
+        "cve_intelligence_summary": cve_intelligence_summary,
         "waf": waf,
             "wayback": wayback,
             "smart_discovery": smart_discovery,
