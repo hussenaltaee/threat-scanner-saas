@@ -120,6 +120,7 @@ input,select{
   font-size:15px;
 }
 input:focus,select:focus{border-color:rgba(255,255,255,.42);box-shadow:0 0 0 4px rgba(255,255,255,.06)}
+textarea{width:100%;min-height:220px;border:1px solid var(--line);border-radius:15px;padding:15px 14px;background:#080808;color:#fff;outline:none;font-size:15px;resize:vertical}
 .scan-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
 .status{
   margin-top:14px;
@@ -219,6 +220,7 @@ pre{
     <div class="actions">
       <button class="ghost" onclick="showSection('scan')">🔎 New Scan</button>
       <button class="ghost" onclick="showSection('history'); loadData(true)">📜 History</button>
+      <button class="ghost" id="bulkNavBtn" onclick="showSection('bulk')">🧩 Bulk Scan</button>
       <button onclick="loadData(true)">🔄 Refresh</button>
       <button class="danger" onclick="logout()">Logout</button>
     </div>
@@ -304,5 +306,6 @@ pre{
 <div id="toast" class="toast"></div>
 
 <script src="app.js?v=live-progress-v1"></script>
+<script src="cve_intelligence_ui_patch_v2.js?v=2"></script>
 </body>
 </html>
