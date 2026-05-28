@@ -46,20 +46,7 @@ body::before{
   mask-image:linear-gradient(to bottom,transparent,#000 16%,#000 82%,transparent);
 }
 a{color:#e5e7eb;text-decoration:none}
-button,textarea{
-  width:100%;
-  min-height:190px;
-  border:1px solid var(--line);
-  border-radius:15px;
-  padding:15px 14px;
-  background:#080808;
-  color:#fff;
-  outline:none;
-  font-size:14px;
-  resize:vertical;
-}
-.bulk-progress{height:14px;border-radius:999px;background:#080808;border:1px solid var(--line2);overflow:hidden;margin:12px 0}.bulk-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#60a5fa,#22c55e);transition:.25s}.bulk-table{width:100%;border-collapse:collapse;margin-top:12px}.bulk-table th,.bulk-table td{border-bottom:1px solid var(--line2);padding:10px;text-align:left;vertical-align:top}.bulk-table th{color:#cfcfcf;font-size:12px;text-transform:uppercase}.url-list{max-height:140px;overflow:auto}.url-list a{display:block;word-break:break-all;color:#dbeafe;margin:4px 0;text-decoration:underline;text-underline-offset:2px}.bulk-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.bulk-stat{background:#070707;border:1px solid var(--line2);border-radius:14px;padding:12px}.bulk-stat b{display:block;color:#muted;font-size:12px}.bulk-stat span{font-size:22px;font-weight:900}
-input,select{font-family:inherit}
+button,input,select{font-family:inherit}
 header{
   position:sticky;
   top:0;
@@ -122,19 +109,6 @@ header{
 .muted{color:var(--muted)}
 .field{margin:14px 0}
 .field label{display:block;font-size:13px;color:#cfcfcf;font-weight:800;margin-bottom:8px}
-textarea{
-  width:100%;
-  min-height:190px;
-  border:1px solid var(--line);
-  border-radius:15px;
-  padding:15px 14px;
-  background:#080808;
-  color:#fff;
-  outline:none;
-  font-size:14px;
-  resize:vertical;
-}
-.bulk-progress{height:14px;border-radius:999px;background:#080808;border:1px solid var(--line2);overflow:hidden;margin:12px 0}.bulk-progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#60a5fa,#22c55e);transition:.25s}.bulk-table{width:100%;border-collapse:collapse;margin-top:12px}.bulk-table th,.bulk-table td{border-bottom:1px solid var(--line2);padding:10px;text-align:left;vertical-align:top}.bulk-table th{color:#cfcfcf;font-size:12px;text-transform:uppercase}.url-list{max-height:140px;overflow:auto}.url-list a{display:block;word-break:break-all;color:#dbeafe;margin:4px 0;text-decoration:underline;text-underline-offset:2px}.bulk-stat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:12px 0}.bulk-stat{background:#070707;border:1px solid var(--line2);border-radius:14px;padding:12px}.bulk-stat b{display:block;color:#muted;font-size:12px}.bulk-stat span{font-size:22px;font-weight:900}
 input,select{
   width:100%;
   border:1px solid var(--line);
@@ -244,7 +218,6 @@ pre{
     </div>
     <div class="actions">
       <button class="ghost" onclick="showSection('scan')">🔎 New Scan</button>
-      <button class="ghost" onclick="showSection('bulk')">🧩 Bulk Scan</button>
       <button class="ghost" onclick="showSection('history'); loadData(true)">📜 History</button>
       <button onclick="loadData(true)">🔄 Refresh</button>
       <button class="danger" onclick="logout()">Logout</button>
@@ -282,18 +255,11 @@ pre{
       </div>
 
       <div class="status" id="statusBox">Ready. Enter a target and start scan.</div>
-
-      <div class="report-section">
-        <h3>🧩 Bulk Scan</h3>
-        <p class="muted">Paste unlimited targets, one per line. The backend will process them safely with queue/concurrency.</p>
-        <button class="green" onclick="showSection('bulk')">Open Bulk Scanner</button>
-      </div>
     </aside>
 
     <section>
       <div class="tabs">
         <button class="tab active" id="tabScan" onclick="showSection('scan')">Scan Result</button>
-        <button class="tab" id="tabBulk" onclick="showSection('bulk')">Bulk Scan</button>
         <button class="tab" id="tabHistory" onclick="showSection('history'); loadData(true)">History</button>
       </div>
 
@@ -303,70 +269,6 @@ pre{
             <div>
               <h2>🛡️ Ready to Scan</h2>
               <p>Results will appear here with open ports, SSL, DNS, WAF, CVEs, findings, and raw JSON.</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-
-      <section id="bulkSection" class="section">
-        <div class="panel out">
-          <div class="result-header">
-            <div>
-              <h2>🧩 Unlimited Bulk Scanner</h2>
-              <p>Paste any number of links/domains/IPs. The server scans them safely with concurrency control and returns vulnerable URLs + archive URLs.</p>
-            </div>
-            <div class="risk-pill" id="bulkStatePill">READY</div>
-          </div>
-
-          <div class="result-panels">
-            <div class="result-card wide">
-              <h3>Targets</h3>
-              <textarea id="bulkTargets" placeholder="https://example.com\nscanme.nmap.org\nhttps://testphp.vulnweb.com"></textarea>
-              <div class="mini-grid">
-                <div class="field">
-                  <label>Bulk profile</label>
-                  <select id="bulkProfile">
-                    <option value="quick" selected>⚡ Quick - safer for many URLs</option>
-                    <option value="full">🛡️ Full</option>
-                    <option value="deep">🔥 Deep - slower</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label>Concurrency</label>
-                  <select id="bulkConcurrency">
-                    <option value="1">1 at a time</option>
-                    <option value="2">2 parallel</option>
-                    <option value="3" selected>3 parallel</option>
-                    <option value="4">4 parallel</option>
-                    <option value="5">5 parallel max</option>
-                  </select>
-                </div>
-              </div>
-              <div class="row">
-                <button class="green" onclick="startBulkScan()">Start Bulk Scan</button>
-                <button onclick="refreshBulkStatus()">Refresh Status</button>
-                <button class="danger" onclick="cancelBulkScan()">Cancel</button>
-                <button onclick="downloadBulkJSON()">Export Bulk JSON</button>
-              </div>
-              <div class="status" id="bulkStatusBox">Ready for bulk scan.</div>
-            </div>
-
-            <div class="result-card wide" id="bulkProgressCard" style="display:none">
-              <h3>Progress</h3>
-              <div class="bulk-progress"><div class="bulk-progress-fill" id="bulkProgressFill"></div></div>
-              <div class="bulk-stat-grid">
-                <div class="bulk-stat"><b>Total</b><span id="bulkTotal">0</span></div>
-                <div class="bulk-stat"><b>Completed</b><span id="bulkCompleted">0</span></div>
-                <div class="bulk-stat"><b>Vulnerable</b><span id="bulkVulnerable">0</span></div>
-                <div class="bulk-stat"><b>Failed</b><span id="bulkFailed">0</span></div>
-              </div>
-              <p class="muted" id="bulkCurrentTarget"></p>
-            </div>
-
-            <div class="result-card wide">
-              <h3>Bulk Results</h3>
-              <div id="bulkResultsBox" class="empty" style="min-height:220px">Bulk results will appear here.</div>
             </div>
           </div>
         </div>
@@ -402,142 +304,5 @@ pre{
 <div id="toast" class="toast"></div>
 
 <script src="app.js?v=live-progress-v1"></script>
-
-<script>
-let currentBulkId = null;
-let bulkPollTimer = null;
-let lastBulkData = null;
-
-function getAuthToken(){
-  return localStorage.getItem('token') || localStorage.getItem('access_token') || localStorage.getItem('jwt') || '';
-}
-
-function apiBase(){
-  return (window.API_URL || window.API_BASE || '').replace(/\/$/, '');
-}
-
-const originalShowSection = window.showSection;
-window.showSection = function(name){
-  if(typeof originalShowSection === 'function' && name !== 'bulk'){
-    originalShowSection(name);
-  }
-  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-  if(name === 'bulk'){
-    document.getElementById('bulkSection')?.classList.add('active');
-    document.getElementById('tabBulk')?.classList.add('active');
-  }else if(name === 'history'){
-    document.getElementById('historySection')?.classList.add('active');
-    document.getElementById('tabHistory')?.classList.add('active');
-  }else{
-    document.getElementById('scanSection')?.classList.add('active');
-    document.getElementById('tabScan')?.classList.add('active');
-  }
-};
-
-function setBulkStatus(text){
-  const box = document.getElementById('bulkStatusBox');
-  if(box) box.textContent = text;
-}
-
-async function startBulkScan(){
-  const raw = document.getElementById('bulkTargets').value || '';
-  const targets = raw.split(/\n|,/).map(x => x.trim()).filter(Boolean);
-  const token = getAuthToken();
-  if(!targets.length){ setBulkStatus('Add at least one target.'); return; }
-  if(!token){ setBulkStatus('Login token not found. Please login again.'); return; }
-
-  setBulkStatus('Starting bulk scan...');
-  document.getElementById('bulkProgressCard').style.display = 'block';
-
-  const res = await fetch(apiBase() + '/bulk-scan/start', {
-    method:'POST',
-    headers:{'Content-Type':'application/json','Authorization':'Bearer ' + token},
-    body:JSON.stringify({
-      targets,
-      profile:document.getElementById('bulkProfile').value,
-      concurrency:parseInt(document.getElementById('bulkConcurrency').value || '3'),
-      include_archive:true
-    })
-  });
-
-  const data = await res.json();
-  if(!res.ok){ setBulkStatus(data.detail || 'Bulk scan failed to start.'); return; }
-
-  currentBulkId = data.bulk_id;
-  lastBulkData = data;
-  setBulkStatus('Bulk scan started: ' + currentBulkId);
-  renderBulkData(data);
-
-  if(bulkPollTimer) clearInterval(bulkPollTimer);
-  bulkPollTimer = setInterval(refreshBulkStatus, 2500);
-}
-
-async function refreshBulkStatus(){
-  if(!currentBulkId){ setBulkStatus('No active bulk scan.'); return; }
-  const token = getAuthToken();
-  const res = await fetch(apiBase() + '/bulk-scan/status/' + currentBulkId, {
-    headers:{'Authorization':'Bearer ' + token}
-  });
-  const data = await res.json();
-  if(!res.ok){ setBulkStatus(data.detail || 'Could not load bulk status.'); return; }
-  lastBulkData = data;
-  renderBulkData(data);
-  if(['completed','failed','cancelled'].includes(data.status)){
-    if(bulkPollTimer) clearInterval(bulkPollTimer);
-    bulkPollTimer = null;
-  }
-}
-
-async function cancelBulkScan(){
-  if(!currentBulkId){ setBulkStatus('No active bulk scan to cancel.'); return; }
-  const token = getAuthToken();
-  const res = await fetch(apiBase() + '/bulk-scan/cancel/' + currentBulkId, {
-    method:'POST',
-    headers:{'Authorization':'Bearer ' + token}
-  });
-  const data = await res.json();
-  lastBulkData = data;
-  renderBulkData(data);
-}
-
-function renderBulkData(data){
-  document.getElementById('bulkStatePill').textContent = (data.status || 'READY').toUpperCase();
-  document.getElementById('bulkProgressCard').style.display = 'block';
-  document.getElementById('bulkProgressFill').style.width = (data.progress || 0) + '%';
-  document.getElementById('bulkTotal').textContent = data.total || 0;
-  document.getElementById('bulkCompleted').textContent = data.completed || 0;
-  document.getElementById('bulkVulnerable').textContent = data.vulnerable_targets || 0;
-  document.getElementById('bulkFailed').textContent = data.failed || 0;
-  document.getElementById('bulkCurrentTarget').textContent = data.current_target ? ('Current: ' + data.current_target) : '';
-  setBulkStatus(`${data.status || 'running'} | ${data.completed || 0}/${data.total || 0} completed | ${data.progress || 0}%`);
-
-  const items = (data.items || []).filter(Boolean);
-  const box = document.getElementById('bulkResultsBox');
-  if(!items.length){ box.className='empty'; box.innerHTML='Waiting for first result...'; return; }
-  box.className='';
-  box.innerHTML = `<table class="bulk-table"><thead><tr><th>Target</th><th>Risk</th><th>Findings</th><th>Vulnerable URLs</th><th>Archive URLs</th></tr></thead><tbody>${items.map(item => {
-    const risk = item.risk || 'UNKNOWN';
-    const vulnUrls = (item.vulnerable_urls || []).slice(0,6).map(u => `<a href="${escapeHtml(u)}" target="_blank">${escapeHtml(u)}</a>`).join('') || '<span class="muted">None</span>';
-    const archiveUrls = (item.archive_urls || []).slice(0,6).map(u => `<a href="${escapeHtml(u)}" target="_blank">${escapeHtml(u)}</a>`).join('') || '<span class="muted">None</span>';
-    return `<tr><td><b>${escapeHtml(item.target)}</b><br><small class="muted">${escapeHtml(item.status || '')}</small></td><td><span class="badge ${risk}">${risk}</span><br><small>${item.score || 0}/100</small></td><td>Confirmed: ${item.confirmed_count || 0}<br>Possible: ${item.possible_count || 0}<br>Surface: ${item.attack_surface_count || 0}</td><td><div class="url-list">${vulnUrls}</div></td><td><div class="url-list">${archiveUrls}</div></td></tr>`;
-  }).join('')}</tbody></table>`;
-}
-
-function escapeHtml(value){
-  return String(value ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
-}
-
-function downloadBulkJSON(){
-  if(!lastBulkData){ setBulkStatus('No bulk data to export.'); return; }
-  const blob = new Blob([JSON.stringify(lastBulkData,null,2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'bulk-scan-report.json';
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
-</script>
-
 </body>
 </html>
