@@ -29,7 +29,7 @@ from db import (
     delete_scan
 )
 
-from analyzer import analyze, get_wayback_archive_urls
+from analyzer import analyze
 
 load_dotenv()
 
