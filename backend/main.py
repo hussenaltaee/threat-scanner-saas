@@ -29,7 +29,7 @@ from db import (
     delete_scan
 )
 
-from analyzer import analyze
+from analyzer import analyze, get_wayback_archive_urls
 
 load_dotenv()
 
@@ -84,6 +84,9 @@ init_db()
 scan_jobs = {}
 scan_queue = None
 queue_worker_task = None
+
+# Bulk scan jobs are kept in memory for live progress/status.
+bulk_jobs = {}
 
 
 def create_token(user):
@@ -145,6 +148,13 @@ class LoginRequest(BaseModel):
 class ScanRequest(BaseModel):
     target: str
     profile: str = "full"
+
+
+class BulkScanRequest(BaseModel):
+    targets: list[str]
+    profile: str = "quick"
+    concurrency: int = 3
+    include_archive: bool = True
 
 
 class ScreenshotRequest(BaseModel):
@@ -641,6 +651,362 @@ def queue_status(
         "failed": len(failed_jobs),
         "cancelled": len(cancelled_jobs)
     }
+
+
+# ============================================================
+# Unlimited Bulk Scanner + Wayback Archive Engine
+# ============================================================
+
+def normalize_bulk_targets(raw_targets):
+    cleaned = []
+    seen = set()
+
+    for item in raw_targets or []:
+        if not item:
+            continue
+
+        # Supports textarea input accidentally sent as one big string.
+        parts = str(item).replace(",", "\n").splitlines()
+
+        for part in parts:
+            target = part.strip()
+            if not target:
+                continue
+
+            if target.startswith("#"):
+                continue
+
+            key = target.lower().rstrip("/")
+            if key in seen:
+                continue
+
+            seen.add(key)
+            cleaned.append(target)
+
+    return cleaned
+
+
+def extract_result_urls(result):
+    urls = []
+
+    def add_url(value):
+        if not value:
+            return
+        value = str(value)
+        if value.startswith("http://") or value.startswith("https://"):
+            urls.append(value)
+
+    for section in [
+        "confirmed_vulnerabilities",
+        "possible_issues",
+        "hardening_issues",
+        "attack_surface",
+        "findings",
+        "vulnerability_checks",
+        "advanced_exposures",
+        "nikto_checks"
+    ]:
+        items = result.get(section, []) if isinstance(result, dict) else []
+        if not isinstance(items, list):
+            continue
+
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            add_url(item.get("affected_url"))
+            add_url(item.get("url"))
+            add_url(item.get("evidence"))
+            add_url(item.get("original_url"))
+
+    wayback = result.get("wayback", {}) if isinstance(result, dict) else {}
+    if isinstance(wayback, dict):
+        for key in ["interesting_urls", "parameterized_urls"]:
+            for item in wayback.get(key, []) or []:
+                if isinstance(item, dict):
+                    add_url(item.get("url"))
+                else:
+                    add_url(item)
+
+    return list(dict.fromkeys(urls))[:80]
+
+
+def summarize_bulk_result(target, result, error=None):
+    if error:
+        return {
+            "target": target,
+            "status": "failed",
+            "risk": "UNKNOWN",
+            "score": 0,
+            "error": error,
+            "vulnerable": False,
+            "confirmed_count": 0,
+            "possible_count": 0,
+            "hardening_count": 0,
+            "attack_surface_count": 0,
+            "vulnerable_urls": [],
+            "archive_urls": []
+        }
+
+    confirmed = result.get("confirmed_vulnerabilities", []) or []
+    possible = result.get("possible_issues", []) or []
+    hardening = result.get("hardening_issues", []) or []
+    attack_surface = result.get("attack_surface", []) or []
+    wayback = result.get("wayback", {}) or {}
+
+    archive_urls = []
+    if isinstance(wayback, dict):
+        for item in (wayback.get("interesting_urls") or [])[:30]:
+            archive_urls.append(item.get("url") if isinstance(item, dict) else item)
+        for item in (wayback.get("parameterized_urls") or [])[:30]:
+            archive_urls.append(item.get("url") if isinstance(item, dict) else item)
+
+    archive_urls = [x for x in dict.fromkeys(archive_urls) if x]
+    vulnerable_urls = extract_result_urls(result)
+    risk = result.get("risk", "UNKNOWN")
+    score = result.get("score", 0)
+
+    return {
+        "target": target,
+        "status": "completed",
+        "risk": risk,
+        "score": score,
+        "scan_id": result.get("scan_id"),
+        "final_url": result.get("final_url"),
+        "vulnerable": bool(confirmed or possible or str(risk).upper() in ["MEDIUM", "HIGH", "CRITICAL"]),
+        "confirmed_count": len(confirmed),
+        "possible_count": len(possible),
+        "hardening_count": len(hardening),
+        "attack_surface_count": len(attack_surface),
+        "vulnerable_urls": vulnerable_urls,
+        "archive_urls": archive_urls[:60],
+        "top_confirmed": confirmed[:5],
+        "top_possible": possible[:5],
+        "top_attack_surface": attack_surface[:5]
+    }
+
+
+def public_bulk_view(job, include_results=True):
+    clean = dict(job)
+    clean.pop("user_id", None)
+    if not include_results:
+        clean.pop("results", None)
+        clean.pop("raw_results", None)
+    return clean
+
+
+async def run_bulk_scan_job(bulk_id, targets, profile, concurrency, include_archive, user_id):
+    job = bulk_jobs[bulk_id]
+    semaphore = asyncio.Semaphore(max(1, min(int(concurrency or 3), 5)))
+
+    job["status"] = "running"
+    job["started_at"] = datetime.utcnow().isoformat()
+    job["updated_at"] = datetime.utcnow().isoformat()
+
+    async def scan_one(index, target):
+        async with semaphore:
+            if job.get("cancel_requested"):
+                return
+
+            item_state = {
+                "target": target,
+                "status": "running",
+                "risk": "UNKNOWN",
+                "score": 0,
+                "started_at": datetime.utcnow().isoformat()
+            }
+            job["items"][index] = item_state
+            job["current_target"] = target
+            job["updated_at"] = datetime.utcnow().isoformat()
+
+            try:
+                result = await analyze(target, profile)
+                result["profile"] = profile
+
+                # Ensure archive URLs are available even if analyzer profile skipped them.
+                if include_archive and not (result.get("wayback") or {}).get("enabled"):
+                    try:
+                        host = result.get("host")
+                        if host:
+                            async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                                result["wayback"] = await get_wayback_archive_urls(client, host)
+                    except Exception as archive_error:
+                        result["wayback"] = {
+                            "enabled": False,
+                            "error": str(archive_error),
+                            "urls": [],
+                            "interesting_urls": [],
+                            "parameterized_urls": []
+                        }
+
+                scan_id = save_scan_result(target, result, user_id)
+                result["scan_id"] = scan_id
+
+                if result.get("risk") in ["HIGH", "CRITICAL"]:
+                    send_discord_alert(target, result.get("risk"), result.get("score"), result)
+
+                summary = summarize_bulk_result(target, result)
+                job["items"][index] = summary
+                job["results"].append(summary)
+                job["raw_results"][target] = result
+
+            except Exception as e:
+                logger.exception(f"Bulk scan item failed | bulk_id={bulk_id} | target={target}")
+                failed = summarize_bulk_result(target, None, str(e))
+                job["items"][index] = failed
+                job["results"].append(failed)
+                job["failed"] += 1
+
+            finally:
+                job["completed"] = len([x for x in job["items"] if x and x.get("status") in ["completed", "failed"]])
+                job["failed"] = len([x for x in job["items"] if x and x.get("status") == "failed"])
+                job["vulnerable_targets"] = len([x for x in job["items"] if x and x.get("vulnerable")])
+                job["progress"] = round((job["completed"] / max(job["total"], 1)) * 100, 2)
+                job["updated_at"] = datetime.utcnow().isoformat()
+
+    try:
+        tasks = [asyncio.create_task(scan_one(i, t)) for i, t in enumerate(targets)]
+        await asyncio.gather(*tasks)
+
+        if job.get("cancel_requested"):
+            job["status"] = "cancelled"
+            job["step"] = "Bulk scan cancelled"
+        else:
+            job["status"] = "completed"
+            job["step"] = "Bulk scan completed"
+            job["progress"] = 100
+
+        job["completed_at"] = datetime.utcnow().isoformat()
+        job["updated_at"] = datetime.utcnow().isoformat()
+
+    except Exception as e:
+        logger.exception(f"Bulk scan failed | bulk_id={bulk_id}")
+        job["status"] = "failed"
+        job["error"] = str(e)
+        job["completed_at"] = datetime.utcnow().isoformat()
+        job["updated_at"] = datetime.utcnow().isoformat()
+
+
+@app.post("/bulk-scan/start")
+@limiter.limit("3/minute")
+async def bulk_scan_start(
+    request: Request,
+    data: BulkScanRequest,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    targets = normalize_bulk_targets(data.targets)
+
+    if not targets:
+        raise HTTPException(status_code=400, detail="No valid targets provided")
+
+    profile = str(data.profile or "quick").lower()
+    if profile not in ["quick", "full", "deep"]:
+        profile = "quick"
+
+    bulk_id = str(uuid.uuid4())
+    concurrency = max(1, min(int(data.concurrency or 3), 5))
+
+    bulk_jobs[bulk_id] = {
+        "bulk_id": bulk_id,
+        "status": "queued",
+        "step": "Bulk scan queued",
+        "profile": profile,
+        "total": len(targets),
+        "completed": 0,
+        "failed": 0,
+        "vulnerable_targets": 0,
+        "progress": 0,
+        "concurrency": concurrency,
+        "include_archive": bool(data.include_archive),
+        "current_target": None,
+        "items": [None for _ in targets],
+        "results": [],
+        "raw_results": {},
+        "error": None,
+        "cancel_requested": False,
+        "created_at": datetime.utcnow().isoformat(),
+        "started_at": None,
+        "completed_at": None,
+        "updated_at": datetime.utcnow().isoformat(),
+        "user_id": user["id"]
+    }
+
+    asyncio.create_task(
+        run_bulk_scan_job(
+            bulk_id=bulk_id,
+            targets=targets,
+            profile=profile,
+            concurrency=concurrency,
+            include_archive=bool(data.include_archive),
+            user_id=user["id"]
+        )
+    )
+
+    return public_bulk_view(bulk_jobs[bulk_id], include_results=False)
+
+
+@app.get("/bulk-scan/status/{bulk_id}")
+@limiter.limit("120/minute")
+def bulk_scan_status(
+    request: Request,
+    bulk_id: str,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    job = bulk_jobs.get(bulk_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Bulk scan not found")
+
+    if job.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    return public_bulk_view(job, include_results=True)
+
+
+@app.get("/bulk-scan/results/{bulk_id}")
+@limiter.limit("60/minute")
+def bulk_scan_results(
+    request: Request,
+    bulk_id: str,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    job = bulk_jobs.get(bulk_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Bulk scan not found")
+
+    if job.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    return public_bulk_view(job, include_results=True)
+
+
+@app.post("/bulk-scan/cancel/{bulk_id}")
+@limiter.limit("20/minute")
+def bulk_scan_cancel(
+    request: Request,
+    bulk_id: str,
+    auth=Depends(security),
+    user=Depends(get_current_user)
+):
+    job = bulk_jobs.get(bulk_id)
+
+    if not job:
+        raise HTTPException(status_code=404, detail="Bulk scan not found")
+
+    if job.get("user_id") != user["id"]:
+        raise HTTPException(status_code=403, detail="Not allowed")
+
+    job["cancel_requested"] = True
+    if job.get("status") in ["queued", "running"]:
+        job["status"] = "cancelled"
+        job["step"] = "Cancel requested"
+        job["completed_at"] = datetime.utcnow().isoformat()
+        job["updated_at"] = datetime.utcnow().isoformat()
+
+    return public_bulk_view(job, include_results=False)
 
 
 @app.post("/screenshot")
