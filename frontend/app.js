@@ -1657,3 +1657,221 @@ function downloadBulkJSON(){
   downloadJSON(lastReport, "bulk-scan-report.json");
 }
 
+
+/* ============================================================
+   Enhanced Bulk Results UI v2
+   Safe override: only improves bulk rendering/export.
+   ============================================================ */
+let __bulkLastData = null;
+let __bulkCurrentFilter = "ALL";
+
+function bulkAsArray(value){
+  return Array.isArray(value) ? value : [];
+}
+
+function bulkGetRisk(item){
+  const rr = item.result || item;
+  return String(rr.risk || item.risk || "UNKNOWN").toUpperCase();
+}
+
+function bulkIsFailed(item){
+  return String(item.status || "").toLowerCase() === "failed" || !!item.error;
+}
+
+function bulkIsVulnerable(item){
+  if (bulkIsFailed(item)) return false;
+  const rr = item.result || item;
+  const risk = bulkGetRisk(item);
+  const confirmed = Number(rr.confirmed_count ?? rr.confirmed_vulnerabilities?.length ?? 0);
+  const possible = Number(rr.possible_count ?? rr.possible_issues?.length ?? 0);
+  return confirmed > 0 || possible > 0 || ["MEDIUM","HIGH","CRITICAL"].includes(risk);
+}
+
+function bulkCollectUrls(item){
+  const rr = item.result || item;
+  const affected = [];
+  const archive = [];
+
+  (rr.vulnerable_urls || rr.infected_urls || []).forEach(u => {
+    const url = typeof u === "string" ? u : (u?.url || u?.affected_url);
+    if(url) affected.push(url);
+  });
+
+  (rr.archive_urls || rr.wayback_urls || rr.wayback_archive_urls || []).forEach(u => {
+    const url = typeof u === "string" ? u : (u?.url || u?.archive_url);
+    if(url) archive.push(url);
+  });
+
+  return {
+    affected: [...new Set(affected)].slice(0, 20),
+    archive: [...new Set(archive)].slice(0, 30)
+  };
+}
+
+function setBulkFilter(filter){
+  __bulkCurrentFilter = filter;
+  if(__bulkLastData) renderBulkResults(__bulkLastData);
+}
+
+function bulkFilteredResults(results){
+  if(__bulkCurrentFilter === "VULNERABLE") return results.filter(bulkIsVulnerable);
+  if(__bulkCurrentFilter === "SAFE") return results.filter(x => !bulkIsVulnerable(x) && !bulkIsFailed(x));
+  if(__bulkCurrentFilter === "FAILED") return results.filter(bulkIsFailed);
+  if(__bulkCurrentFilter === "HIGH") return results.filter(x => ["HIGH","CRITICAL"].includes(bulkGetRisk(x)));
+  return results;
+}
+
+function renderBulkUrlList(title, urls, emptyText){
+  return `
+    <h4>${esc(title)} <span class="badge">${urls.length}</span></h4>
+    ${
+      urls.length
+      ? `<div class="bulk-url-list">${urls.map(u => `
+          <div class="bulk-url-item">
+            <a href="${esc(u)}" target="_blank" rel="noopener noreferrer">${esc(u)}</a>
+            <div class="affected-actions" style="margin-top:8px">
+              <button type="button" onclick="openUrl('${esc(u)}')">Open</button>
+              <button type="button" onclick="copyText('${esc(u)}')">Copy</button>
+            </div>
+          </div>
+        `).join("")}</div>`
+      : `<div class="bulk-empty">${esc(emptyText)}</div>`
+    }
+  `;
+}
+
+function renderBulkTargetCard(item){
+  const rr = item.result || item;
+  const target = item.target || rr.target || "Unknown";
+  const risk = bulkGetRisk(item);
+  const failed = bulkIsFailed(item);
+  const vulnerable = bulkIsVulnerable(item);
+  const urls = bulkCollectUrls(item);
+  const confirmed = Number(rr.confirmed_count ?? rr.confirmed_vulnerabilities?.length ?? 0);
+  const possible = Number(rr.possible_count ?? rr.possible_issues?.length ?? 0);
+  const hardening = Number(rr.hardening_count ?? rr.hardening_issues?.length ?? 0);
+  const attack = Number(rr.attack_surface_count ?? rr.attack_surface?.length ?? 0);
+  const statusLabel = failed ? "FAILED" : vulnerable ? "VULNERABLE" : "OK";
+
+  return `
+    <div class="bulk-target-card ${riskClass(risk)}">
+      <div class="bulk-target-head">
+        <div>
+          <h4>${esc(target)}</h4>
+          <p class="muted">${esc(rr.final_url || item.final_url || "")}</p>
+        </div>
+        <div class="row" style="margin-top:0">
+          <span class="badge ${esc(risk)}">${esc(risk)}</span>
+          <span class="badge">${esc(statusLabel)}</span>
+        </div>
+      </div>
+
+      <div class="bulk-mini-grid">
+        <div class="bulk-mini"><span>Score</span><b>${esc(rr.score ?? 0)}/100</b></div>
+        <div class="bulk-mini"><span>Confirmed</span><b>${esc(confirmed)}</b></div>
+        <div class="bulk-mini"><span>Possible</span><b>${esc(possible)}</b></div>
+        <div class="bulk-mini"><span>Hardening</span><b>${esc(hardening)}</b></div>
+        <div class="bulk-mini"><span>Attack Surface</span><b>${esc(attack)}</b></div>
+      </div>
+
+      ${failed ? `<p><b>Error:</b> ${esc(item.error || rr.error || "Unknown error")}</p>` : ""}
+      ${rr.final_url ? renderUrlActions(rr.final_url) : ""}
+
+      <details>
+        <summary>Show URLs and evidence</summary>
+        ${renderBulkUrlList("Affected URLs", urls.affected, "No affected URLs returned for this target.")}
+        ${renderBulkUrlList("Archive URLs", urls.archive, "No archive URLs returned for this target.")}
+      </details>
+    </div>
+  `;
+}
+
+function renderBulkResults(data){
+  __bulkLastData = data;
+
+  const results = Array.isArray(data.results) ? data.results : [];
+  const total = data.total || data.total_targets || results.length;
+  const vulnerableResults = results.filter(bulkIsVulnerable);
+  const failedResults = results.filter(bulkIsFailed);
+  const safeResults = results.filter(x => !bulkIsVulnerable(x) && !bulkIsFailed(x));
+  const highResults = results.filter(x => ["HIGH","CRITICAL"].includes(bulkGetRisk(x)));
+
+  const allAffected = [];
+  const allArchive = [];
+
+  results.forEach(r => {
+    const target = r.target || r.result?.target || "target";
+    const urls = bulkCollectUrls(r);
+    urls.affected.forEach(url => allAffected.push({target, url}));
+    urls.archive.forEach(url => allArchive.push({target, url}));
+  });
+
+  const filtered = bulkFilteredResults(results);
+  const bulkResults = $("bulkResults");
+  if(!bulkResults) return;
+
+  bulkResults.innerHTML = `
+    <div class="result-card wide">
+      <h2>🧩 Bulk Scan Results</h2>
+      <div class="result-grid">
+        <div class="box"><span>Total Targets</span><h3>${esc(total)}</h3></div>
+        <div class="box high"><span>Vulnerable</span><h3>${esc(vulnerableResults.length)}</h3></div>
+        <div class="box low"><span>Safe / Low</span><h3>${esc(safeResults.length)}</h3></div>
+        <div class="box"><span>Failed</span><h3>${esc(failedResults.length)}</h3></div>
+        <div class="box high"><span>High/Critical</span><h3>${esc(highResults.length)}</h3></div>
+        <div class="box"><span>Archive URLs</span><h3>${esc(allArchive.length)}</h3></div>
+      </div>
+
+      <div class="bulk-filter-row">
+        ${["ALL","VULNERABLE","HIGH","SAFE","FAILED"].map(f => `
+          <button class="${__bulkCurrentFilter === f ? "active" : ""}" onclick="setBulkFilter('${f}')">${f}</button>
+        `).join("")}
+        <button onclick="downloadBulkJSON()">Export JSON</button>
+        <button onclick="copyText(JSON.stringify(__bulkLastData, null, 2))">Copy JSON</button>
+      </div>
+    </div>
+
+    <div class="result-card wide">
+      <h3>🚨 All Affected URLs</h3>
+      ${
+        allAffected.length
+        ? allAffected.slice(0,120).map(x => `
+          <div class="mini-result">
+            <b>${esc(x.target)}</b>
+            ${renderUrlActions(x.url)}
+          </div>
+        `).join("")
+        : `<p class="muted">No affected URLs returned.</p>`
+      }
+    </div>
+
+    <div class="result-card wide">
+      <h3>🕰️ All Wayback Archive URLs</h3>
+      ${
+        allArchive.length
+        ? allArchive.slice(0,180).map(x => `
+          <div class="mini-result">
+            <b>${esc(x.target)}</b>
+            ${renderUrlActions(x.url)}
+          </div>
+        `).join("")
+        : `<p class="muted">No archive URLs returned.</p>`
+      }
+    </div>
+
+    <div class="result-card wide">
+      <h3>🌐 Targets Summary — ${esc(__bulkCurrentFilter)}</h3>
+      ${
+        filtered.length
+        ? filtered.map(renderBulkTargetCard).join("")
+        : `<div class="bulk-empty">No targets match this filter.</div>`
+      }
+    </div>
+
+    <div class="result-card wide">
+      <h3>🧾 Raw Bulk JSON</h3>
+      <pre>${esc(JSON.stringify(data, null, 2))}</pre>
+    </div>
+  `;
+}
+
