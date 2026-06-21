@@ -404,6 +404,33 @@ function renderJsCrawlerSection(data) {
 }
 
 
+
+function renderJsSecrets(data) {
+  const secrets = Array.isArray(data.js_secret_exposure) ? data.js_secret_exposure : [];
+  if (!secrets.length) {
+    return `<div class="result-card wide"><h3>🔑 JS Secret Exposure</h3><p class="muted">No JS secrets detected.</p></div>`;
+  }
+
+  return `
+    <div class="result-card wide">
+      <h3>🔑 JS Secret Exposure</h3>
+      ${secrets.map(s => `
+        <div class="finding ${riskClass(s.severity)}">
+          <div class="finding-head">
+            <h4>${esc(s.type || s.secret_type || "Secret")}</h4>
+            <span class="finding-status">${esc(s.severity || "INFO")}</span>
+          </div>
+          <p><b>Evidence:</b> ${esc(s.evidence || "-")}</p>
+          <p><b>Source:</b> ${esc(s.url || s.source || "-")}</p>
+          ${renderUrlActions(s.url || s.source)}
+          <div class="fix-box"><b>Fix</b><p>${esc(s.fix || "Review manually")}</p></div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+
 // =========================
 // LOGIN
 // =========================
@@ -889,6 +916,7 @@ function renderScanResult(data) {
         <div class="result-card wide"><h3>🌍 Threat Intelligence / ASN</h3>${renderThreatIntel(data)}</div>
         <div class="result-card wide"><h3>🕸️ Attack Surface Map</h3>${renderAttackSurface(data)}</div>
         ${renderJsCrawlerSection(data)}
+        ${renderJsSecrets(data)}
         <div class="result-card wide"><h3>🧬 CVE Results</h3>${cveHTML}</div>
         <div class="result-card wide"><h3>🌐 Subdomains</h3>${subdomainHTML}</div>
 

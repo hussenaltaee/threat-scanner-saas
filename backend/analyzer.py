@@ -1041,95 +1041,204 @@ def mask_secret(value):
     return value[:6] + "..." + value[-4:]
 
 
-def extract_js_urls(base_url, html):
+def extract_js_urls(base_url, html, limit=40):
+    """Extract JavaScript file URLs from HTML safely."""
     js_urls = []
     html = html or ""
 
     patterns = [
-        r'<script[^>]+src=["\']([^"\']+\.js[^"\']*)["\']',
-        r'href=["\']([^"\']+\.js[^"\']*)["\']'
+        r'<script[^>]+src=["\']([^"\']+)["\']',
+        r'href=["\']([^"\']+\.js(?:\?[^"\']*)?)["\']'
     ]
 
     for pattern in patterns:
         for match in re.findall(pattern, html, flags=re.IGNORECASE):
             try:
-                full_url = urljoin(str(base_url), match)
-                if full_url not in js_urls:
-                    js_urls.append(full_url)
-            except Exception:
-                pass
+                src = str(match).strip()
+                if not src:
+                    continue
+                if ".js" not in src.lower():
+                    continue
 
-    return js_urls[:12]
+                full_url = urljoin(str(base_url), src)
+                clean_key = full_url.split("#", 1)[0]
+
+                if clean_key not in js_urls:
+                    js_urls.append(clean_key)
+            except Exception:
+                continue
+
+    return js_urls[:limit]
+
+
+JS_SECRET_SAFE_WORDS = [
+    "example", "sample", "demo", "test", "testing", "placeholder",
+    "your_", "insert_", "replace_me", "changeme", "change_me",
+    "dummy", "fake", "mock", "localhost", "127.0.0.1",
+    "undefined", "null", "xxxx", "xxxxx", "*****", "<", ">"
+]
+
+
+JS_SECRET_RULES = [
+    {
+        "type": "Private Key",
+        "severity": "CRITICAL",
+        "confidence": "HIGH",
+        "evidence_type": "private_key_exposed",
+        "regex": r"-----BEGIN\s+(?:RSA\s+|DSA\s+|EC\s+|OPENSSH\s+)?PRIVATE\s+KEY-----",
+        "fix": "Remove the private key from public files immediately, rotate the key, and store it only in backend secrets/environment variables."
+    },
+    {
+        "type": "AWS Access Key",
+        "severity": "HIGH",
+        "confidence": "HIGH",
+        "evidence_type": "real_secret_exposed",
+        "regex": r"\bAKIA[0-9A-Z]{16}\b",
+        "fix": "Revoke/rotate the AWS key immediately. Never ship cloud credentials in frontend JavaScript."
+    },
+    {
+        "type": "GitHub Token",
+        "severity": "HIGH",
+        "confidence": "HIGH",
+        "evidence_type": "real_secret_exposed",
+        "regex": r"\bgh[pousr]_[A-Za-z0-9_]{20,}\b",
+        "fix": "Revoke the GitHub token immediately and move it to backend-only configuration."
+    },
+    {
+        "type": "Slack Token",
+        "severity": "HIGH",
+        "confidence": "HIGH",
+        "evidence_type": "real_secret_exposed",
+        "regex": r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b",
+        "fix": "Revoke the Slack token and store it server-side only."
+    },
+    {
+        "type": "Stripe Secret Key",
+        "severity": "HIGH",
+        "confidence": "HIGH",
+        "evidence_type": "real_secret_exposed",
+        "regex": r"\bsk_(?:live|test)_[A-Za-z0-9]{20,}\b",
+        "fix": "Rotate the Stripe secret key and move all secret-key usage to the backend."
+    },
+    {
+        "type": "JWT Token",
+        "severity": "HIGH",
+        "confidence": "HIGH",
+        "evidence_type": "real_secret_exposed",
+        "regex": r"\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b",
+        "fix": "Do not embed JWT/session tokens in frontend bundles. Rotate exposed tokens and keep them server-side or short-lived."
+    },
+    {
+        "type": "Bearer Token",
+        "severity": "HIGH",
+        "confidence": "MEDIUM",
+        "evidence_type": "credential_pattern",
+        "regex": r"Bearer\s+[A-Za-z0-9\-\._~\+\/]{24,}={0,2}",
+        "fix": "Review and rotate the token if valid. Bearer tokens should not be hardcoded in frontend code."
+    },
+    {
+        "type": "Google API Key",
+        "severity": "MEDIUM",
+        "confidence": "MEDIUM",
+        "evidence_type": "credential_pattern",
+        "regex": r"\bAIza[0-9A-Za-z\-_]{35}\b",
+        "fix": "Restrict the Google API key by HTTP referrer/API scope and move sensitive operations to the backend."
+    },
+    {
+        "type": "Firebase API Key",
+        "severity": "MEDIUM",
+        "confidence": "MEDIUM",
+        "evidence_type": "credential_pattern",
+        "regex": r"(?i)apiKey\s*[:=]\s*[\"']([^\"']{20,})[\"']",
+        "fix": "Firebase config can be public, but review database/storage rules and restrict allowed domains."
+    },
+    {
+        "type": "Possible Secret Assignment",
+        "severity": "MEDIUM",
+        "confidence": "MEDIUM",
+        "evidence_type": "credential_like_value",
+        "regex": r"(?i)(?:secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|auth[_-]?token)\s*[:=]\s*[\"']([^\"']{16,})[\"']",
+        "fix": "Review this value. If it is a real secret, rotate it and move it to backend environment variables."
+    }
+]
+
+
+def is_probably_false_positive(value):
+    value = str(value or "").strip()
+    low = value.lower()
+
+    if not value or len(value) < 12:
+        return True
+
+    if any(word in low for word in JS_SECRET_SAFE_WORDS):
+        return True
+
+    # Ignore boring repeated filler values such as aaaaaaaa or 0000000000.
+    compact = re.sub(r"[^A-Za-z0-9]", "", value)
+    if compact and len(set(compact.lower())) <= 2 and len(compact) > 10:
+        return True
+
+    return False
+
+
+def _extract_secret_value(match):
+    if not match:
+        return ""
+
+    try:
+        groups = match.groups()
+        if groups:
+            for group in reversed(groups):
+                if group:
+                    return str(group)
+        return str(match.group(0))
+    except Exception:
+        return ""
+
+
+def build_secret_context(js_text, start, end, raw_value):
+    left = max(0, start - 70)
+    right = min(len(js_text), end + 70)
+    context = js_text[left:right]
+    return context.replace(raw_value, mask_secret(raw_value))[:260]
 
 
 def detect_js_secrets(js_text, js_url):
+    """Return normalized JS secret findings with severity, confidence and evidence metadata."""
     findings = []
+    js_text = str(js_text or "")
 
-    secret_patterns = [
-        {
-            "type": "AWS Access Key",
-            "severity": "HIGH",
-            "regex": r"AKIA[0-9A-Z]{16}",
-            "fix": "Remove AWS keys from frontend JavaScript. Rotate the exposed key and move secrets to backend environment variables."
-        },
-        {
-            "type": "Google API Key",
-            "severity": "MEDIUM",
-            "regex": r"AIza[0-9A-Za-z\-_]{35}",
-            "fix": "Restrict the Google API key by domain/IP and move sensitive usage to the backend where possible."
-        },
-        {
-            "type": "Firebase API Key",
-            "severity": "MEDIUM",
-            "regex": r"apiKey\s*[:=]\s*[\"']([^\"']{20,})[\"']",
-            "fix": "Review Firebase rules. Public Firebase config is common, but database/storage rules must be locked down."
-        },
-        {
-            "type": "Private Key Marker",
-            "severity": "CRITICAL",
-            "regex": r"-----BEGIN\s+(?:RSA\s+)?PRIVATE\s+KEY-----",
-            "fix": "Immediately remove private keys from public files, rotate affected credentials, and redeploy."
-        },
-        {
-            "type": "Bearer Token",
-            "severity": "HIGH",
-            "regex": r"Bearer\s+[A-Za-z0-9\-\._~\+\/]+=*",
-            "fix": "Do not expose bearer tokens in frontend code. Rotate the token and store it server-side."
-        },
-        {
-            "type": "GitHub Token",
-            "severity": "HIGH",
-            "regex": r"gh[pousr]_[A-Za-z0-9_]{20,}",
-            "fix": "Revoke the GitHub token immediately and remove it from public JavaScript."
-        },
-        {
-            "type": "Slack Token",
-            "severity": "HIGH",
-            "regex": r"xox[baprs]-[A-Za-z0-9\-]{20,}",
-            "fix": "Revoke the Slack token and move it to backend-only configuration."
-        },
-        {
-            "type": "Possible Secret Assignment",
-            "severity": "MEDIUM",
-            "regex": r"(?:secret|token|api[_-]?key|access[_-]?key|client[_-]?secret)\s*[:=]\s*[\"']([^\"']{12,})[\"']",
-            "fix": "Review this value. If it is a real secret, rotate it and move it to backend environment variables."
-        }
-    ]
-
-    for rule in secret_patterns:
+    for rule in JS_SECRET_RULES:
         try:
-            matches = re.findall(rule["regex"], js_text, flags=re.IGNORECASE)
+            for match in re.finditer(rule["regex"], js_text, flags=re.IGNORECASE):
+                raw_value = _extract_secret_value(match)
 
-            for match in matches[:5]:
-                value = match[0] if isinstance(match, tuple) else match
+                if is_probably_false_positive(raw_value):
+                    continue
+
+                evidence = mask_secret(raw_value)
+                context = build_secret_context(js_text, match.start(), match.end(), raw_value)
 
                 findings.append({
                     "type": rule["type"],
+                    "title": f"JS Secret Exposure: {rule['type']}",
                     "severity": rule["severity"],
+                    "confidence": rule.get("confidence", "MEDIUM"),
+                    "status": "CONFIRMED" if rule.get("evidence_type") in ["private_key_exposed", "real_secret_exposed"] else "POSSIBLE",
+                    "category": "JavaScript Secrets",
                     "url": js_url,
-                    "evidence": mask_secret(value),
-                    "fix": rule["fix"]
+                    "source": js_url,
+                    "affected_url": js_url,
+                    "evidence": evidence,
+                    "context": context,
+                    "evidence_type": rule.get("evidence_type", "credential_pattern"),
+                    "fix": rule["fix"],
+                    "fix_location": js_url
                 })
+
+                # Avoid flooding the report from one minified bundle/rule.
+                if len([x for x in findings if x.get("type") == rule["type"] and x.get("url") == js_url]) >= 5:
+                    break
 
         except Exception:
             continue
@@ -1143,16 +1252,12 @@ async def check_js_secrets(client, response):
     if not response:
         return results
 
-    js_urls = extract_js_urls(response.url, response.text)
+    js_urls = extract_js_urls(response.url, response.text, limit=40)
 
     if not js_urls:
         return results
 
-    tasks = [
-        safe_get(client, js_url)
-        for js_url in js_urls
-    ]
-
+    tasks = [safe_get(client, js_url) for js_url in js_urls]
     responses = await asyncio.gather(*tasks)
 
     for js_url, js_res in zip(js_urls, responses):
@@ -1160,15 +1265,15 @@ async def check_js_secrets(client, response):
             continue
 
         content_type = js_res.headers.get("content-type", "").lower()
+        looks_like_js = str(js_url).lower().split("?", 1)[0].endswith(".js")
 
-        if "javascript" not in content_type and not str(js_url).lower().split("?")[0].endswith(".js"):
+        if "javascript" not in content_type and "ecmascript" not in content_type and not looks_like_js:
             continue
 
-        js_text = js_res.text[:250000]
+        js_text = (js_res.text or "")[:500000]
         results.extend(detect_js_secrets(js_text, js_url))
 
     return dedupe_dicts(results, ["type", "url", "evidence"])
-
 
 
 
@@ -4505,24 +4610,26 @@ async def analyze(target, profile="full"):
                 for secret in js_secrets[:8]:
                     add_vuln(
                         vulnerability_checks,
-                        f"Possible JS Secret Exposure: {secret.get('type')}",
+                        f"JS Secret Exposure: {secret.get('type')}",
                         secret.get("severity", "MEDIUM"),
-                        f"{secret.get('url')} | Evidence: {secret.get('evidence')}",
-                        "Public JavaScript appears to contain a value that may be sensitive.",
+                        f"{secret.get('url')} | Evidence: {secret.get('evidence')} | Context: {secret.get('context', '')}",
+                        "Public JavaScript appears to contain a secret or credential-like value.",
                         secret.get("fix"),
-                        "JavaScript Secrets"
+                        "JavaScript Secrets",
+                        secret.get("confidence", "MEDIUM"),
+                        secret.get("evidence_type", "credential_pattern")
                     )
 
                     add_finding(
                         findings,
-                        f"Possible JS Secret Exposure: {secret.get('type')}",
+                        f"JS Secret Exposure: {secret.get('type')}",
                         secret.get("severity", "MEDIUM"),
-                        "A public JavaScript file appears to contain a possible secret or credential-like value.",
+                        "A public JavaScript file contains a secret or credential-like value.",
                         secret.get("fix"),
                         "JavaScript Secrets",
-                        f"{secret.get('url')} | Evidence: {secret.get('evidence')}",
-                        "HIGH" if secret.get("type") in ["AWS Access Key","Private Key Marker","GitHub Token"] else "MEDIUM",
-                        "pattern_match"
+                        f"{secret.get('url')} | Evidence: {secret.get('evidence')} | Context: {secret.get('context', '')}",
+                        secret.get("confidence", "MEDIUM"),
+                        secret.get("evidence_type", "credential_pattern")
                     )
 
             if api_endpoints:
@@ -5123,6 +5230,7 @@ async def analyze(target, profile="full"):
             "kxss_results": kxss_results,
         "http_methods": http_methods,
         "js_secrets": js_secrets,
+        "js_secret_exposure": js_secrets,
         "api_endpoints": api_endpoints,
         "advanced_exposures": advanced_exposures,
         "graphql_introspection": graphql_introspection,
