@@ -1874,6 +1874,441 @@ async def run_real_validation_engine(client, response):
 
 
 
+
+
+# ============================================================
+# Smart Discovery v2 - Runtime JS / API / Parameter Capture
+# ============================================================
+
+def normalize_discovery_url(base_url, raw_url):
+    try:
+        raw = str(raw_url or "").strip()
+        if not raw:
+            return None
+        if raw.startswith("data:") or raw.startswith("blob:") or raw.startswith("mailto:") or raw.startswith("tel:"):
+            return None
+        return urljoin(str(base_url), raw).split("#", 1)[0]
+    except Exception:
+        return None
+
+
+def is_probable_js_url(url):
+    u = str(url or "").lower().split("?", 1)[0]
+    return u.endswith(".js") or ".js/" in u or "/js/" in u or "javascript" in u
+
+
+def is_probable_api_url(url):
+    u = str(url or "").lower()
+    indicators = [
+        "/api/", "/apis/", "/v1/", "/v2/", "/v3/", "/graphql",
+        "/rest/", "/ajax/", "/xhr/", "/json/", "/rpc/",
+        "api.", "graphql.", "gateway.", "endpoint"
+    ]
+    return any(x in u for x in indicators)
+
+
+def discovery_host(url):
+    try:
+        return urlparse(str(url)).netloc.lower()
+    except Exception:
+        return ""
+
+
+def same_registered_host(base_url, url):
+    try:
+        base_host = discovery_host(base_url).replace("www.", "")
+        target_host = discovery_host(url).replace("www.", "")
+        return bool(base_host and target_host and (target_host == base_host or target_host.endswith("." + base_host)))
+    except Exception:
+        return False
+
+
+def extract_urls_from_text(base_url, text, limit=250):
+    found = []
+    seen = set()
+    text = str(text or "")
+
+    patterns = [
+        r'["\'](https?://[^"\']{5,400})["\']',
+        r'["\']((?:/|\./|\.\./)[A-Za-z0-9_\-./?=&%:+,@]{2,400})["\']',
+        r'(https?://[A-Za-z0-9_\-./?=&%:+,@#]{8,400})'
+    ]
+
+    for pattern in patterns:
+        try:
+            for match in re.findall(pattern, text, flags=re.IGNORECASE):
+                url = normalize_discovery_url(base_url, match)
+                if not url:
+                    continue
+                if url in seen:
+                    continue
+                seen.add(url)
+                found.append(url)
+                if len(found) >= limit:
+                    return found
+        except Exception:
+            continue
+
+    return found
+
+
+def extract_api_endpoints_v2(base_url, text, source="static"):
+    urls = extract_urls_from_text(base_url, text, limit=400)
+    endpoints = []
+
+    for url in urls:
+        try:
+            parsed = urlparse(url)
+            path = parsed.path or ""
+            q = parsed.query or ""
+            full = url
+
+            is_endpoint = is_probable_api_url(full)
+            if not is_endpoint and re.search(r"/(?:api|v[0-9]|graphql|ajax|json|rpc|rest)(?:/|$)", path, re.I):
+                is_endpoint = True
+
+            if not is_endpoint:
+                continue
+
+            severity = "INFO"
+            category = "API Endpoint"
+            low = full.lower()
+
+            if any(x in low for x in ["admin", "internal", "private", "debug", "secret"]):
+                severity = "MEDIUM"
+                category = "Sensitive API"
+            elif "graphql" in low:
+                severity = "MEDIUM"
+                category = "GraphQL"
+            elif any(x in low for x in ["auth", "login", "token", "session"]):
+                category = "Auth API"
+
+            endpoints.append({
+                "endpoint": full,
+                "url": full,
+                "path": path,
+                "query": q,
+                "severity": severity,
+                "category": category,
+                "source": source
+            })
+        except Exception:
+            continue
+
+    return dedupe_dicts(endpoints, ["endpoint"])
+
+
+def extract_parameters_from_url(url, source="url"):
+    params = []
+    try:
+        parsed = urlparse(str(url))
+        query = parse_qs(parsed.query or "")
+        for name, values in query.items():
+            params.append({
+                "parameter": name,
+                "source": source,
+                "url": str(url),
+                "test_url": str(url),
+                "sample_value": values[0] if values else ""
+            })
+    except Exception:
+        pass
+    return params
+
+
+def extract_parameters_from_text(base_url, text, source="text"):
+    params = []
+    text = str(text or "")
+
+    # URL query parameters
+    for url in extract_urls_from_text(base_url, text, limit=300):
+        params.extend(extract_parameters_from_url(url, source=source))
+
+    # Common JS object/form parameter names
+    name_patterns = [
+        r'["\']([A-Za-z_][A-Za-z0-9_\-]{1,40})["\']\s*:',
+        r'\b(?:name|id)\s*=\s*["\']([A-Za-z_][A-Za-z0-9_\-]{1,40})["\']',
+        r'\bformData\.append\(\s*["\']([A-Za-z_][A-Za-z0-9_\-]{1,40})["\']'
+    ]
+
+    noisy = {
+        "class", "style", "script", "type", "src", "href", "true", "false",
+        "null", "undefined", "length", "prototype", "constructor"
+    }
+
+    for pattern in name_patterns:
+        try:
+            for name in re.findall(pattern, text, flags=re.IGNORECASE):
+                n = str(name).strip()
+                if not n or n.lower() in noisy:
+                    continue
+                params.append({
+                    "parameter": n,
+                    "source": source,
+                    "url": str(base_url),
+                    "test_url": str(base_url),
+                    "sample_value": ""
+                })
+        except Exception:
+            continue
+
+    return dedupe_dicts(params, ["parameter", "source"])
+
+
+async def fetch_and_analyze_js_files(client, base_url, js_urls, limit=40):
+    js_files = []
+    endpoints = []
+    parameters = []
+    secrets = []
+    source_maps = []
+
+    unique_js = []
+    for url in js_urls or []:
+        clean = normalize_discovery_url(base_url, url)
+        if clean and clean not in unique_js:
+            unique_js.append(clean)
+
+    unique_js = unique_js[:limit]
+    responses = await asyncio.gather(*[safe_get(client, u) for u in unique_js]) if unique_js else []
+
+    for js_url, res in zip(unique_js, responses):
+        if not res or res.status_code != 200:
+            continue
+
+        content_type = res.headers.get("content-type", "").lower()
+        looks_like_js = is_probable_js_url(js_url)
+
+        if "javascript" not in content_type and "ecmascript" not in content_type and not looks_like_js:
+            continue
+
+        js_text = (res.text or "")[:700000]
+        js_files.append(js_url)
+
+        endpoints.extend(extract_api_endpoints_v2(js_url, js_text, source="js_static"))
+        parameters.extend(extract_parameters_from_text(js_url, js_text, source="js_static"))
+        secrets.extend(detect_js_secrets(js_text, js_url))
+
+        # Source map discovery
+        if "sourceMappingURL=" in js_text:
+            for match in re.findall(r"sourceMappingURL\s*=\s*([^\s*]+)", js_text, flags=re.IGNORECASE):
+                smap = normalize_discovery_url(js_url, match)
+                if smap:
+                    source_maps.append({
+                        "url": smap,
+                        "source": js_url,
+                        "severity": "INFO"
+                    })
+
+        possible_map = js_url.split("?", 1)[0] + ".map"
+        source_maps.append({
+            "url": possible_map,
+            "source": js_url,
+            "severity": "INFO"
+        })
+
+    return {
+        "js_files": dedupe_list(js_files),
+        "endpoints": dedupe_dicts(endpoints, ["endpoint"]),
+        "parameters": dedupe_dicts(parameters, ["parameter", "url"]),
+        "secrets": dedupe_dicts(secrets, ["type", "url", "evidence"]),
+        "source_maps": dedupe_dicts(source_maps, ["url"])
+    }
+
+
+async def playwright_runtime_discovery(base_url, max_wait_ms=12000):
+    result = {
+        "available": PLAYWRIGHT_AVAILABLE,
+        "js_files": [],
+        "runtime_requests": [],
+        "endpoints": [],
+        "parameters": [],
+        "websockets": [],
+        "page_url": str(base_url),
+        "error": None
+    }
+
+    if not PLAYWRIGHT_AVAILABLE or not async_playwright:
+        result["error"] = "Playwright is not available in this environment."
+        return result
+
+    try:
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(
+                headless=True,
+                args=[
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-gpu",
+                    "--disable-extensions",
+                    "--disable-background-networking"
+                ]
+            )
+
+            context = await browser.new_context(
+                ignore_https_errors=True,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+            )
+            page = await context.new_page()
+
+            request_urls = set()
+            js_urls = set()
+            api_urls = set()
+            ws_urls = set()
+
+            def on_request(request):
+                try:
+                    url = request.url
+                    if not url:
+                        return
+
+                    request_urls.add(url)
+
+                    rtype = request.resource_type
+                    method = request.method
+
+                    if rtype == "script" or is_probable_js_url(url):
+                        js_urls.add(url)
+
+                    if rtype in ["xhr", "fetch"] or is_probable_api_url(url):
+                        api_urls.add(url)
+
+                    result["runtime_requests"].append({
+                        "url": url,
+                        "endpoint": url,
+                        "method": method,
+                        "resource_type": rtype,
+                        "source": "runtime"
+                    })
+                except Exception:
+                    pass
+
+            def on_websocket(ws):
+                try:
+                    ws_urls.add(ws.url)
+                except Exception:
+                    pass
+
+            page.on("request", on_request)
+            page.on("websocket", on_websocket)
+
+            try:
+                await page.goto(str(base_url), wait_until="domcontentloaded", timeout=max_wait_ms)
+                await page.wait_for_timeout(3500)
+                try:
+                    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await page.wait_for_timeout(1200)
+                except Exception:
+                    pass
+            except Exception as e:
+                result["error"] = f"Runtime navigation warning: {str(e)[:160]}"
+
+            try:
+                html = await page.content()
+                for u in extract_js_urls(base_url, html, limit=80):
+                    js_urls.add(u)
+                result["endpoints"].extend(extract_api_endpoints_v2(base_url, html, source="runtime_html"))
+                result["parameters"].extend(extract_parameters_from_text(base_url, html, source="runtime_html"))
+            except Exception:
+                pass
+
+            await context.close()
+            await browser.close()
+
+            result["js_files"] = dedupe_list(list(js_urls))[:80]
+            result["runtime_requests"] = dedupe_dicts(result["runtime_requests"], ["url", "method"])[:200]
+            result["endpoints"].extend([
+                {
+                    "endpoint": u,
+                    "url": u,
+                    "severity": "MEDIUM" if "graphql" in u.lower() else "INFO",
+                    "category": "GraphQL" if "graphql" in u.lower() else "Runtime API",
+                    "source": "runtime_network"
+                }
+                for u in api_urls
+            ])
+
+            result["parameters"].extend([
+                p
+                for u in list(request_urls)[:200]
+                for p in extract_parameters_from_url(u, source="runtime_url")
+            ])
+
+            result["websockets"] = [
+                {"url": u, "endpoint": u, "severity": "INFO", "source": "runtime_websocket"}
+                for u in ws_urls
+            ]
+
+            result["endpoints"] = dedupe_dicts(result["endpoints"], ["endpoint"])[:120]
+            result["parameters"] = dedupe_dicts(result["parameters"], ["parameter", "url"])[:160]
+
+    except Exception as e:
+        result["error"] = str(e)[:240]
+
+    return result
+
+
+async def run_smart_discovery_v2(client, response):
+    base_url = str(response.url) if response else ""
+    html = response.text if response else ""
+
+    smart = {
+        "version": "v2",
+        "js_files": [],
+        "endpoints": [],
+        "parameters": [],
+        "runtime_requests": [],
+        "websockets": [],
+        "source_maps": [],
+        "secrets": [],
+        "kxss": [],
+        "error": None
+    }
+
+    if not response:
+        smart["error"] = "No HTTP response available for smart discovery."
+        return smart
+
+    try:
+        # Static discovery from HTML
+        static_js = extract_js_urls(base_url, html, limit=80)
+        smart["js_files"].extend(static_js)
+        smart["endpoints"].extend(extract_api_endpoints_v2(base_url, html, source="html"))
+        smart["parameters"].extend(extract_parameters_from_text(base_url, html, source="html"))
+
+        # Runtime discovery with Playwright
+        runtime = await playwright_runtime_discovery(base_url)
+        if runtime.get("error"):
+            smart["error"] = runtime.get("error")
+
+        smart["js_files"].extend(runtime.get("js_files", []))
+        smart["runtime_requests"].extend(runtime.get("runtime_requests", []))
+        smart["endpoints"].extend(runtime.get("endpoints", []))
+        smart["parameters"].extend(runtime.get("parameters", []))
+        smart["websockets"].extend(runtime.get("websockets", []))
+
+        # Analyze JS files gathered from both static and runtime capture
+        js_analysis = await fetch_and_analyze_js_files(client, base_url, smart["js_files"], limit=50)
+        smart["js_files"].extend(js_analysis.get("js_files", []))
+        smart["endpoints"].extend(js_analysis.get("endpoints", []))
+        smart["parameters"].extend(js_analysis.get("parameters", []))
+        smart["source_maps"].extend(js_analysis.get("source_maps", []))
+        smart["secrets"].extend(js_analysis.get("secrets", []))
+
+        smart["js_files"] = dedupe_list(smart["js_files"])[:80]
+        smart["runtime_requests"] = dedupe_dicts(smart["runtime_requests"], ["url", "method"])[:200]
+        smart["endpoints"] = dedupe_dicts(smart["endpoints"], ["endpoint"])[:160]
+        smart["parameters"] = dedupe_dicts(smart["parameters"], ["parameter", "url"])[:200]
+        smart["websockets"] = dedupe_dicts(smart["websockets"], ["url"])[:50]
+        smart["source_maps"] = dedupe_dicts(smart["source_maps"], ["url"])[:80]
+        smart["secrets"] = dedupe_dicts(smart["secrets"], ["type", "url", "evidence"])[:80]
+
+    except Exception as e:
+        smart["error"] = str(e)[:240]
+
+    return smart
+
+
+
 # ============================================================
 # CVE Intelligence Engine v2
 # ============================================================
