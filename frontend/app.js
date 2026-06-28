@@ -334,10 +334,27 @@ function renderEnterpriseSummaryCards(sections) {
 // =========================
 function renderJsCrawlerSection(data) {
   const crawler = data.smart_discovery || data.js_crawler || {};
-  const endpoints = data.js_endpoints || crawler.endpoints || [];
-  const params = data.parameter_miner || crawler.parameters || [];
-  const kxss = data.kxss_results || crawler.kxss || [];
-  const runtime = crawler.runtime_requests || [];
+
+  const endpoints =
+    data.js_endpoints ||
+    data.api_endpoints ||
+    crawler.endpoints ||
+    [];
+
+  const params =
+    data.parameter_miner ||
+    crawler.parameters ||
+    [];
+
+  const kxss =
+    data.kxss_results ||
+    crawler.kxss ||
+    [];
+
+  const runtime =
+    data.runtime_requests ||
+    crawler.runtime_requests ||
+    [];
 
   return `
     <div class="result-card wide">
