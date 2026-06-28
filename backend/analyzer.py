@@ -1075,9 +1075,21 @@ JS_SECRET_SAFE_WORDS = [
     "example", "sample", "demo", "test", "testing", "placeholder",
     "your_", "insert_", "replace_me", "changeme", "change_me",
     "dummy", "fake", "mock", "localhost", "127.0.0.1",
-    "undefined", "null", "xxxx", "xxxxx", "*****", "<", ">"
+    "undefined", "null", "xxxx", "xxxxx", "*****", "<", ">",
+    "analytics", "metric", "metrics", "tracking", "telemetry",
+    "globalheader", "global-header", "apple", "cdn", "assets",
+    "available", "enabled", "disabled", "locale", "language",
+    "version", "build", "bundle", "chunk", "module", "config",
+    "public", "client", "browser", "window", "document"
 ]
 
+JS_SECRET_PUBLIC_CONFIG_KEYS = [
+    "api", "apis", "apiurl", "api_url", "apiendpoint", "api_endpoint",
+    "analytics", "metrics", "tracking", "telemetry",
+    "locale", "language", "region", "country",
+    "environment", "env", "mode", "version", "build",
+    "clientid", "client_id", "projectid", "project_id"
+]
 
 JS_SECRET_RULES = [
     {
@@ -1133,7 +1145,7 @@ JS_SECRET_RULES = [
         "severity": "HIGH",
         "confidence": "MEDIUM",
         "evidence_type": "credential_pattern",
-        "regex": r"Bearer\s+[A-Za-z0-9\-\._~\+\/]{24,}={0,2}",
+        "regex": r"Bearer\s+[A-Za-z0-9\-\._~\+\/]{32,}={0,2}",
         "fix": "Review and rotate the token if valid. Bearer tokens should not be hardcoded in frontend code."
     },
     {
@@ -1149,7 +1161,7 @@ JS_SECRET_RULES = [
         "severity": "MEDIUM",
         "confidence": "MEDIUM",
         "evidence_type": "credential_pattern",
-        "regex": r"(?i)apiKey\s*[:=]\s*[\"']([^\"']{20,})[\"']",
+        "regex": r"(?i)\bapiKey\s*[:=]\s*[\"']([^\"']{30,})[\"']",
         "fix": "Firebase config can be public, but review database/storage rules and restrict allowed domains."
     },
     {
@@ -1157,25 +1169,73 @@ JS_SECRET_RULES = [
         "severity": "MEDIUM",
         "confidence": "MEDIUM",
         "evidence_type": "credential_like_value",
-        "regex": r"(?i)(?:secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|auth[_-]?token)\s*[:=]\s*[\"']([^\"']{16,})[\"']",
+        "regex": r"(?i)\b(secret|token|api[_-]?key|access[_-]?key|client[_-]?secret|auth[_-]?token|refresh[_-]?token)\b\s*[:=]\s*[\"']([^\"']{24,})[\"']",
         "fix": "Review this value. If it is a real secret, rotate it and move it to backend environment variables."
     }
 ]
 
 
-def is_probably_false_positive(value):
+def secret_entropy(value):
+    import math
+    value = str(value or "")
+    if not value:
+        return 0.0
+    freq = {}
+    for ch in value:
+        freq[ch] = freq.get(ch, 0) + 1
+    length = len(value)
+    return -sum((count / length) * math.log2(count / length) for count in freq.values())
+
+
+def is_probably_public_config(key_name, value):
+    key = str(key_name or "").lower().replace("-", "_")
+    value_l = str(value or "").lower()
+
+    if key in JS_SECRET_PUBLIC_CONFIG_KEYS:
+        return True
+
+    if any(k in key for k in ["analytics", "metric", "tracking", "telemetry", "locale", "version", "config"]):
+        return True
+
+    if any(x in value_l for x in ["globalheader", "analytics", "metrics", "locale", "available=", "enabled=", "false", "true"]):
+        return True
+
+    return False
+
+
+def is_probably_false_positive(value, key_name=None, rule_type=None):
     value = str(value or "").strip()
     low = value.lower()
+    compact = re.sub(r"[^A-Za-z0-9]", "", value)
 
-    if not value or len(value) < 12:
+    if not value:
+        return True
+
+    strong_types = {"Private Key", "AWS Access Key", "GitHub Token", "Slack Token", "Stripe Secret Key", "JWT Token"}
+    if rule_type in strong_types:
+        return False
+
+    if rule_type == "Possible Secret Assignment":
+        if len(compact) < 28:
+            return True
+        if secret_entropy(compact) < 3.5:
+            return True
+        if is_probably_public_config(key_name, value):
+            return True
+
+    if len(compact) < 20:
         return True
 
     if any(word in low for word in JS_SECRET_SAFE_WORDS):
         return True
 
-    # Ignore boring repeated filler values such as aaaaaaaa or 0000000000.
-    compact = re.sub(r"[^A-Za-z0-9]", "", value)
-    if compact and len(set(compact.lower())) <= 2 and len(compact) > 10:
+    if low.startswith(("http://", "https://", "/", "./", "../")):
+        return True
+
+    if compact and len(set(compact.lower())) <= 3 and len(compact) > 10:
+        return True
+
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,18}", compact or ""):
         return True
 
     return False
@@ -1183,17 +1243,17 @@ def is_probably_false_positive(value):
 
 def _extract_secret_value(match):
     if not match:
-        return ""
+        return "", ""
 
     try:
         groups = match.groups()
-        if groups:
-            for group in reversed(groups):
-                if group:
-                    return str(group)
-        return str(match.group(0))
+        if len(groups) >= 2:
+            return str(groups[1] or ""), str(groups[0] or "")
+        if len(groups) == 1:
+            return str(groups[0] or ""), ""
+        return str(match.group(0)), ""
     except Exception:
-        return ""
+        return "", ""
 
 
 def build_secret_context(js_text, start, end, raw_value):
@@ -1204,24 +1264,27 @@ def build_secret_context(js_text, start, end, raw_value):
 
 
 def detect_js_secrets(js_text, js_url):
-    """Return normalized JS secret findings with severity, confidence and evidence metadata."""
+    """Return normalized JS secret findings with strict false-positive filtering."""
     findings = []
     js_text = str(js_text or "")
 
     for rule in JS_SECRET_RULES:
         try:
-            for match in re.finditer(rule["regex"], js_text, flags=re.IGNORECASE):
-                raw_value = _extract_secret_value(match)
+            per_rule_count = 0
 
-                if is_probably_false_positive(raw_value):
+            for match in re.finditer(rule["regex"], js_text, flags=re.IGNORECASE):
+                raw_value, key_name = _extract_secret_value(match)
+                rule_type = rule["type"]
+
+                if is_probably_false_positive(raw_value, key_name=key_name, rule_type=rule_type):
                     continue
 
                 evidence = mask_secret(raw_value)
                 context = build_secret_context(js_text, match.start(), match.end(), raw_value)
 
-                findings.append({
-                    "type": rule["type"],
-                    "title": f"JS Secret Exposure: {rule['type']}",
+                finding = {
+                    "type": rule_type,
+                    "title": f"JS Secret Exposure: {rule_type}",
                     "severity": rule["severity"],
                     "confidence": rule.get("confidence", "MEDIUM"),
                     "status": "CONFIRMED" if rule.get("evidence_type") in ["private_key_exposed", "real_secret_exposed"] else "POSSIBLE",
@@ -1234,17 +1297,21 @@ def detect_js_secrets(js_text, js_url):
                     "evidence_type": rule.get("evidence_type", "credential_pattern"),
                     "fix": rule["fix"],
                     "fix_location": js_url
-                })
+                }
 
-                # Avoid flooding the report from one minified bundle/rule.
-                if len([x for x in findings if x.get("type") == rule["type"] and x.get("url") == js_url]) >= 5:
+                if key_name:
+                    finding["key_name"] = key_name
+
+                findings.append(finding)
+                per_rule_count += 1
+
+                if per_rule_count >= 3:
                     break
 
         except Exception:
             continue
 
     return findings
-
 
 async def check_js_secrets(client, response):
     results = []
