@@ -1,0 +1,11 @@
+{
+  "rewrites": [
+    { "source": "/(.*)", "destination": "threat-saas/backend/main.py" }
+  ],
+  "builds": [
+    {
+      "src": "threat-saas/backend/main.py",
+      "use": "@vercel/python"
+    }
+  ]
+}
