@@ -30,7 +30,8 @@ from urllib.parse import urlparse, urljoin, parse_qs, urlencode, urlunparse
 
 COMMON_PORTS = [21, 22, 25, 53, 80, 110, 143, 443, 8080, 8443]
 RISKY_PORTS = [21, 22, 25, 3306, 5432, 6379, 27017]
-DEFAULT_WPSCAN_API_TOKEN = "wxJzOGYJPaKk2czy1suHt0u4LMfxAFbasc6B11NhYEI"
+def get_wpscan_api_token():
+    return os.getenv("WPSCAN_API_TOKEN", "").strip()
 
 PORT_SERVICES = {
     21: "FTP",
@@ -3393,7 +3394,7 @@ async def run_wpscan_scan(scan_url, profile="full", is_wordpress=False):
         result["error"] = "wpscan binary is not installed on system"
         return result
 
-    token = os.getenv("WPSCAN_API_TOKEN", DEFAULT_WPSCAN_API_TOKEN).strip()
+    token = get_wpscan_api_token()
 
     cmd = [
         "wpscan",

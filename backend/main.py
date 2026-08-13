@@ -35,19 +35,23 @@ from analyzer import analyze, normalize_target
 
 load_dotenv()
 
-SECRET_KEY = os.getenv("SECRET_KEY", "fallback-secret-change-me")
-ALGORITHM = "HS256"
-DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
-JWT_ISSUER = os.getenv("JWT_ISSUER", "threat-scanner-saas")
-JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "threat-scanner-users")
-
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 )
 
 logger = logging.getLogger("threat-scanner")
+
+SECRET_KEY = os.getenv("SECRET_KEY") or os.getenv("JWT_SECRET") or os.urandom(32).hex()
+ALGORITHM = "HS256"
+DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL", "")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+JWT_ISSUER = os.getenv("JWT_ISSUER", "threat-scanner-saas")
+JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "threat-scanner-users")
+
+if not os.getenv("SECRET_KEY") and not os.getenv("JWT_SECRET"):
+    logger.warning("SECRET_KEY/JWT_SECRET not configured; generated an ephemeral key for this process only.")
+
 limiter = Limiter(key_func=get_remote_address)
 
 app = FastAPI(

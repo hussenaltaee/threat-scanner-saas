@@ -1,12 +1,18 @@
 import sqlite3
 import hashlib
 import json
+from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent
 DB_NAME = "database.db"
 
 
+def get_db_path():
+    return BASE_DIR / DB_NAME
+
+
 def get_connection():
-    conn = sqlite3.connect(DB_NAME)
+    conn = sqlite3.connect(get_db_path())
     conn.row_factory = sqlite3.Row
     return conn
 
