@@ -33,6 +33,18 @@ from db import (
 
 from analyzer import analyze, normalize_target
 
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_WORDLIST_PATH = os.getenv("WORDLIST_PATH") or os.path.join(PROJECT_ROOT, "rockyou.txt")
+
+if not os.path.exists(DEFAULT_WORDLIST_PATH):
+    DEFAULT_WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
+
+
+def get_wordlist_path(custom_path: str | None = None) -> str:
+    if custom_path and custom_path.strip():
+        return custom_path.strip()
+    return DEFAULT_WORDLIST_PATH
+
 load_dotenv()
 
 logging.basicConfig(
@@ -328,9 +340,9 @@ def public_job_view(job):
     clean.pop("user_id", None)
     return clean
 
-async def run_wpscan_bruteforce(target: str, username: str, password_file: str = "/usr/share/wordlists/rockyou.txt"):
+async def run_wpscan_bruteforce(target: str, username: str, password_file: str | None = None):
     normalized_target = normalize_target(target)
-    wordlist_path = password_file or "/usr/share/wordlists/rockyou.txt"
+    wordlist_path = get_wordlist_path(password_file)
 
     result = {
         "executed": False,

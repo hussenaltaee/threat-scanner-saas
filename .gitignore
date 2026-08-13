@@ -1,1 +1,15 @@
-rockyou.txt
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local runtime data
+*.db
+*.sqlite
+.env
+
+# IDE/editor
+.vscode/
+
+# OS
+.DS_Store
