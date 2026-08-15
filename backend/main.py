@@ -34,11 +34,14 @@ from db import (
 from analyzer import analyze, normalize_target
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+DEFAULT_PASSWORD_LIST_PATH = os.path.join(PROJECT_ROOT, "passwords.txt")
+DEFAULT_ROCKYOU_PATH = os.path.join(PROJECT_ROOT, "rockyou.txt")
 load_dotenv()
 
 COMMON_WORDLIST_CANDIDATES = [
     os.getenv("WORDLIST_PATH") or os.getenv("PASSWORD_LIST_PATH"),
-    os.path.join(PROJECT_ROOT, "rockyou.txt"),
+    DEFAULT_PASSWORD_LIST_PATH,
+    DEFAULT_ROCKYOU_PATH,
     os.path.join(PROJECT_ROOT, "backend", "rockyou.txt"),
     "/usr/share/wordlists/rockyou.txt",
     "/usr/share/seclists/Passwords/rockyou.txt",
@@ -46,9 +49,76 @@ COMMON_WORDLIST_CANDIDATES = [
     "/usr/share/wordlists/rockyou.txt.gz",
 ]
 
+
+def ensure_default_password_list(path: str = DEFAULT_PASSWORD_LIST_PATH) -> str:
+    if os.path.exists(path):
+        return path
+
+    default_passwords = [
+        "admin",
+        "admin123",
+        "admin@123",
+        "password",
+        "password123",
+        "welcome",
+        "welcome123",
+        "root",
+        "root123",
+        "letmein",
+        "qwerty",
+        "qwerty123",
+        "123456",
+        "12345678",
+        "123456789",
+        "secret",
+        "secret123",
+        "passw0rd",
+        "pass123",
+        "Pass123!",
+        "P@ssw0rd",
+        "adminadmin",
+        "test",
+        "test123",
+        "demo",
+        "demo123",
+        "guest",
+        "guest123",
+        "backup",
+        "backup123",
+        "system",
+        "system123",
+        "user",
+        "user123",
+        "dev",
+        "dev123",
+        "prod",
+        "prod123",
+        "support",
+        "support123",
+        "manager",
+        "manager123",
+        "login",
+        "login123",
+        "default",
+        "default123",
+        "opener",
+        "opener123",
+        "threat",
+        "scanner",
+        "scanner123",
+        "abc123",
+        "admin/admin",
+    ]
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(default_passwords) + "\n")
+
+    return path
+
+
 DEFAULT_WORDLIST_PATH = next(
     (p for p in COMMON_WORDLIST_CANDIDATES if p and os.path.exists(p)),
-    os.path.join(PROJECT_ROOT, "rockyou.txt")
+    ensure_default_password_list()
 )
 
 
@@ -74,7 +144,7 @@ def get_wordlist_path(custom_path: str | None = None) -> str:
         if os.path.exists(candidate):
             return candidate
 
-    return DEFAULT_WORDLIST_PATH
+    return ensure_default_password_list()
 
 logging.basicConfig(
     level=logging.INFO,
