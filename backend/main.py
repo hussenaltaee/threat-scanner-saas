@@ -61,6 +61,21 @@ ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
 JWT_ISSUER = os.getenv("JWT_ISSUER", "threat-scanner-saas")
 JWT_AUDIENCE = os.getenv("JWT_AUDIENCE", "threat-scanner-users")
 
+# Render and local browser origins are common in this project. Keep explicit origins
+# and a regex fallback so new *.onrender.com deployments keep working without code changes.
+DEFAULT_ALLOWED_ORIGINS = [
+    "https://threat-frontend.onrender.com",
+    "https://threat-scanner-saas-2.onrender.com",
+    "https://threat-scanner-saas-1.onrender.com",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:5500",
+    "http://127.0.0.1:8000",
+]
+custom_allowed_origins = os.getenv("ALLOWED_ORIGINS", "")
+if custom_allowed_origins:
+    DEFAULT_ALLOWED_ORIGINS.extend([origin.strip() for origin in custom_allowed_origins.split(",") if origin.strip()])
+
 if not os.getenv("SECRET_KEY") and not os.getenv("JWT_SECRET"):
     logger.warning("SECRET_KEY/JWT_SECRET not configured; generated an ephemeral key for this process only.")
 
@@ -84,17 +99,13 @@ app.add_middleware(SlowAPIMiddleware)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "https://threat-frontend.onrender.com",
-        "https://threat-scanner-saas-2.onrender.com",
-        "https://threat-scanner-saas-1.onrender.com",
-        "http://localhost:3000",
-        "http://127.0.0.1:5500"
-    ],
+    allow_origins=DEFAULT_ALLOWED_ORIGINS,
+    allow_origin_regex=r"https://.*\.onrender\.com|http://localhost:\d+|http://127\.0\.0\.1:\d+",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
     allow_headers=["*"],
-    expose_headers=["*"]
+    expose_headers=["*"],
+    max_age=600,
 )
 
 init_db()
