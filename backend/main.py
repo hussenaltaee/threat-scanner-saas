@@ -34,18 +34,47 @@ from db import (
 from analyzer import analyze, normalize_target
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-DEFAULT_WORDLIST_PATH = os.getenv("WORDLIST_PATH") or os.path.join(PROJECT_ROOT, "rockyou.txt")
+load_dotenv()
 
-if not os.path.exists(DEFAULT_WORDLIST_PATH):
-    DEFAULT_WORDLIST_PATH = "/usr/share/wordlists/rockyou.txt"
+COMMON_WORDLIST_CANDIDATES = [
+    os.getenv("WORDLIST_PATH") or os.getenv("PASSWORD_LIST_PATH"),
+    os.path.join(PROJECT_ROOT, "rockyou.txt"),
+    os.path.join(PROJECT_ROOT, "backend", "rockyou.txt"),
+    "/usr/share/wordlists/rockyou.txt",
+    "/usr/share/seclists/Passwords/rockyou.txt",
+    "/usr/share/dict/rockyou.txt",
+    "/usr/share/wordlists/rockyou.txt.gz",
+]
+
+DEFAULT_WORDLIST_PATH = next(
+    (p for p in COMMON_WORDLIST_CANDIDATES if p and os.path.exists(p)),
+    os.path.join(PROJECT_ROOT, "rockyou.txt")
+)
 
 
 def get_wordlist_path(custom_path: str | None = None) -> str:
-    if custom_path and custom_path.strip():
-        return custom_path.strip()
-    return DEFAULT_WORDLIST_PATH
+    explicit_paths = []
 
-load_dotenv()
+    if custom_path and custom_path.strip():
+        explicit_paths.append(custom_path.strip())
+
+    env_path = os.getenv("WORDLIST_PATH") or os.getenv("PASSWORD_LIST_PATH")
+    if env_path and env_path.strip():
+        explicit_paths.append(env_path.strip())
+
+    for path in explicit_paths:
+        candidate = os.path.expanduser(path.strip())
+        if candidate:
+            return candidate
+
+    for path in COMMON_WORDLIST_CANDIDATES:
+        if not path:
+            continue
+        candidate = os.path.expanduser(path.strip())
+        if os.path.exists(candidate):
+            return candidate
+
+    return DEFAULT_WORDLIST_PATH
 
 logging.basicConfig(
     level=logging.INFO,
@@ -198,7 +227,7 @@ class ScreenshotRequest(BaseModel):
 class WpScanBruteforceRequest(BaseModel):
     target: str
     username: str
-    password_file: str = "/usr/share/wordlists/rockyou.txt"
+    password_file: str | None = None
 
 
 def send_discord_alert(target, risk, score, result=None):

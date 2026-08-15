@@ -25,6 +25,15 @@ def test_auth_secret_is_not_hardcoded():
     assert secret != "SUPER_SECRET_KEY_123456789"
 
 
+def test_get_wordlist_path_honors_env_override(monkeypatch):
+    import main
+
+    custom_wordlist = "/tmp/custom-passwords.txt"
+    monkeypatch.setenv("WORDLIST_PATH", custom_wordlist)
+    assert main.get_wordlist_path() == custom_wordlist
+    assert main.get_wordlist_path("/tmp/manual-passwords.txt") == "/tmp/manual-passwords.txt"
+
+
 def test_render_and_localhost_origins_are_allowed_for_cors():
     import main
 
