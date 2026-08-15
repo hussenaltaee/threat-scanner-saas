@@ -34,6 +34,13 @@ def test_get_wordlist_path_honors_env_override(monkeypatch):
     assert main.get_wordlist_path("/tmp/manual-passwords.txt") == "/tmp/manual-passwords.txt"
 
 
+def test_default_admin_user_exists():
+    import db
+
+    db.init_db()
+    assert db.verify_user("admin", "admin") is not None
+
+
 def test_render_and_localhost_origins_are_allowed_for_cors():
     import main
 

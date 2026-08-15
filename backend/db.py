@@ -144,6 +144,10 @@ def init_db():
     c.execute("CREATE INDEX IF NOT EXISTS idx_ports_scan_id ON scan_ports(scan_id)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_cves_scan_id ON scan_cves(scan_id)")
 
+    admin_user = get_user_by_username("admin")
+    if not admin_user:
+        create_user("admin", "admin")
+
     conn.commit()
     conn.close()
 
