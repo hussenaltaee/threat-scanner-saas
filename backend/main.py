@@ -1,8 +1,10 @@
 from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+from fastapi.responses import FileResponse
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
+from pathlib import Path
 import requests
 import httpx
 import json
@@ -34,6 +36,7 @@ from db import (
 from analyzer import analyze, normalize_target
 
 PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+FRONTEND_DIR = Path(PROJECT_ROOT) / "frontend"
 DEFAULT_PASSWORD_LIST_PATH = os.path.join(PROJECT_ROOT, "passwords.txt")
 DEFAULT_ROCKYOU_PATH = os.path.join(PROJECT_ROOT, "rockyou.txt")
 load_dotenv()
@@ -594,15 +597,34 @@ async def wpscan_bruteforce(
     return await run_wpscan_bruteforce(data.target, data.username, data.password_file)
 
 
-@app.get("/")
+@app.get("/", include_in_schema=False)
 @limiter.limit("60/minute")
 def home(request: Request):
-    queue_size = scan_queue.qsize() if scan_queue else 0
+    return FileResponse(str(FRONTEND_DIR / "dashboard.html"))
 
-    return {
-        "status": "online",
-        "queue_size": queue_size
-    }
+
+@app.get("/dashboard", include_in_schema=False)
+@limiter.limit("60/minute")
+def dashboard_page(request: Request):
+    return FileResponse(str(FRONTEND_DIR / "dashboard.html"))
+
+
+@app.get("/login", include_in_schema=False)
+@limiter.limit("60/minute")
+def login_page(request: Request):
+    return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+
+@app.get("/index.html", include_in_schema=False)
+@limiter.limit("60/minute")
+def index_html(request: Request):
+    return FileResponse(str(FRONTEND_DIR / "index.html"))
+
+
+@app.get("/app.js", include_in_schema=False)
+@limiter.limit("60/minute")
+def app_js(request: Request):
+    return FileResponse(str(FRONTEND_DIR / "app.js"))
 
 
 @app.post("/register")
