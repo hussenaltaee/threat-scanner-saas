@@ -627,6 +627,21 @@ def app_js(request: Request):
     return FileResponse(str(FRONTEND_DIR / "app.js"))
 
 
+@app.get("/frontend/{file_path:path}", include_in_schema=False)
+@limiter.limit("60/minute")
+def frontend_static(request: Request, file_path: str):
+    candidate = FRONTEND_DIR / file_path
+    if candidate.is_file():
+        return FileResponse(str(candidate))
+    raise HTTPException(status_code=404, detail="Frontend asset not found")
+
+
+@app.get("/frontend", include_in_schema=False)
+@limiter.limit("60/minute")
+def frontend_root(request: Request):
+    return FileResponse(str(FRONTEND_DIR / "dashboard.html"))
+
+
 @app.post("/register")
 @limiter.limit("5/minute")
 def register(request: Request, data: RegisterRequest):
